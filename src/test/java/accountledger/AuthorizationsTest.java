@@ -167,9 +167,9 @@ class AuthorizationsTest {
     @CsvSource({"UNKNOWN, AED", "ACC-001, BHD"})
     void anInvalidDecisionRejectsTheWholeJournalEntry(String accountId, CurrencyUnit currency) {
         var invalid = new Authorization(accountId, "A", Money.of(currency, "200.00"), APPROVED);
+        var request = new Request("MIXED", 2, new Request.Hold(accountId, "A", invalid.amount()));
         var before = journal.entries();
 
-        var request = new Request("MIXED", 2, new Request.Hold(accountId, "A", invalid.amount()));
         assertThrows(IllegalArgumentException.class,
                 () -> journal.append(request, () -> new Journal.Effects(List.of(aed(2, "400.00")), List.of(invalid))));
         assertEquals(before, journal.entries());
@@ -192,8 +192,6 @@ class AuthorizationsTest {
         assertEquals(APPROVED, entry.authorizations().getFirst().status());
     }
 
-    private Posting aed(int day, String amount) {
-        return new Posting("ACC-001", day, Money.of(AED, amount));
     @Test
     void anOriginalCloseExcludesLaterHoldsAndPostings() {
         var authA = authorizations.authorize("E3", 2, "ACC-001", "Auth-A", Money.of(AED, "200.00"));
@@ -248,5 +246,7 @@ class AuthorizationsTest {
         }
     }
 
+    private Posting aed(int day, String amount) {
+        return new Posting("ACC-001", day, Money.of(AED, amount));
     }
 }
