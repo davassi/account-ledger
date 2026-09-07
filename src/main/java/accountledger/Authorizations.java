@@ -30,7 +30,7 @@ public final class Authorizations {
         var hold = new Request.Hold(accountId, authorizationId, amount);
         var request = new Request(eventId, day, hold);
         var entry = journal.append(request, () -> {
-            var decision = decide(hold, day, journal.lastSequence());
+            var decision = auth(hold, day, journal.lastSequence());
             return new Journal.Effects(List.of(), List.of(decision));
         });
         return entry.authorizations().getFirst();
@@ -81,15 +81,17 @@ public final class Authorizations {
                         && settlement.authorizationId().equals(authorizationId));
     }
 
-    private Authorization decide(Request.Hold hold, int day, long cutoff) {
+    /** The Authorization Rule */
+    private Authorization auth(Request.Hold hold, int day, long cutoff) {
         var accountId = hold.accountId();
         var authorizationId = hold.authorizationId();
         if (find(accountId, authorizationId, cutoff).isPresent()) {
             throw new RequestRejectedException("Authorization ID already used for account: " + authorizationId);
         }
         journal.validateCurrency(accountId, hold.amount());
-        var remaining = available(accountId, day, cutoff).subtract(hold.amount());
-        var status = remaining.signum() >= 0 ? APPROVED : DECLINED;
+
+        final var remaining = available(accountId, day, cutoff).subtract(hold.amount());
+        final var status = remaining.signum() >= 0 ? APPROVED : DECLINED;
         return new Authorization(accountId, authorizationId, hold.amount(), status);
     }
 
