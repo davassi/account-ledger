@@ -19,7 +19,7 @@ public record Request(String eventId, int bookedDay, Data data) {
     }
 
     /** The record type distinguishes the operation as well as its input fields. */
-    public sealed interface Data permits Postings, Hold, Settlement {}
+    public sealed interface Data permits Postings, Hold, Settlement, Reversal {}
 
     public record Postings(List<Posting> postings) implements Data {
         public Postings {
@@ -32,4 +32,7 @@ public record Request(String eventId, int bookedDay, Data data) {
 
     /** The monetary value day is independent of the request's booked day. */
     public record Settlement(String accountId, String authorizationId, Money amount, int valueDay) implements Data {}
+
+    /** Amounts and currency come from the original event, not from the reversal request. */
+    public record Reversal(String accountId, String originalEventId, int valueDay) implements Data {}
 }

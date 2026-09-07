@@ -1,0 +1,47 @@
+package accountledger;
+
+import java.util.List;
+import java.util.Objects;
+
+/** Compensates an original monetary event through a new journal entry. */
+public final class Reversals {
+    private final Journal journal;
+
+    public Reversals(Journal journal) {
+        this.journal = Objects.requireNonNull(journal, "journal");
+    }
+
+    /**
+     * Reverses all postings of one account's event at the requested value day.
+     * Holds, diagnostics and separate fee entries are left as recorded.
+     * Only one full reversal is allowed; identical event retries return that entry.
+     */
+    public Journal.Entry reverse(String eventId, int bookedDay, String accountId, String originalEventId, int valueDay) {
+        var data = new Request.Reversal(accountId, originalEventId, valueDay);
+        var request = new Request(eventId, bookedDay, data);
+        return journal.append(request, () -> {
+            long cutoff = journal.lastSequence();
+            var original = journal.find(originalEventId, cutoff)
+                    .orElseThrow(() -> new IllegalArgumentException("Unknown original event: " + originalEventId));
+            if (original.postings().isEmpty() || original.request().data() instanceof Request.Reversal) {
+                throw new IllegalArgumentException("Only original monetary events can be reversed");
+            }
+            if (original.postings().stream().anyMatch(posting -> !posting.accountId().equals(accountId))) {
+                throw new IllegalArgumentException("All original postings must belong to account: " + accountId);
+            }
+
+            boolean alreadyReversed = journal.entries(cutoff).stream()
+                    .map(entry -> entry.request().data())
+                    .anyMatch(input -> input instanceof Request.Reversal reversal
+                            && reversal.originalEventId().equals(originalEventId));
+            if (alreadyReversed) {
+                throw new IllegalArgumentException("Event already reversed: " + originalEventId);
+            }
+
+            var postings = original.postings().stream()
+                    .map(posting -> new Posting(accountId, valueDay, posting.delta().negate()))
+                    .toList();
+            return new Journal.Effects(postings, List.of());
+        });
+    }
+}

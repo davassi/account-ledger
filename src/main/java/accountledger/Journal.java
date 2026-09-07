@@ -5,6 +5,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -48,9 +49,7 @@ public final class Journal {
     Entry append(Request request, Supplier<Effects> decide) {
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(decide, "decide");
-        var duplicate = entries.stream()
-                .filter(entry -> entry.eventId().equals(request.eventId()))
-                .findFirst();
+        var duplicate = find(request.eventId(), lastSequence());
         if (duplicate.isPresent()) {
             var existing = duplicate.get();
             if (!existing.request().equals(request)) {
@@ -111,6 +110,13 @@ public final class Journal {
             throw new IllegalArgumentException("Invalid knowledge cutoff");
         }
         return List.copyOf(entries.subList(0, Math.toIntExact(knownThroughSequence)));
+    }
+
+    /** Finds an event only if it is already known at the given cutoff. */
+    public Optional<Entry> find(String eventId, long knownThroughSequence) {
+        return entries(knownThroughSequence).stream()
+                .filter(entry -> entry.eventId().equals(eventId))
+                .findFirst();
     }
 
     private void validateCurrency(String accountId, Money amount) {
