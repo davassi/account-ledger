@@ -8,7 +8,8 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
- * In-memory, append-only history for a fixed set of accounts, grouped by event.
+ * In-memory, append-only history of postings and authorization decisions,
+ * grouped by event, for a fixed set of accounts.
  * Entries and exposed snapshots are immutable. Designed for single-threaded replay.
  */
 public final class Journal {
@@ -28,25 +29,32 @@ public final class Journal {
      * Validates all postings before recording them together, so a rejected entry
      * leaves no partial movements behind. Empty entries are allowed.
      *
-     * <p>The same event ID, booked day and ordered postings return the original
-     * entry without consuming a sequence. Reusing an ID with different data fails.
+     * <p>An identical monetary entry returns the original without consuming a
+     * sequence. Reusing an ID with different data or for another event kind fails.
      * Booking days may move backwards; sequences always follow arrival order.
      */
     public Entry append(String eventId, int bookedDay, List<Posting> postings) {
-        var entry = new Entry(lastSequence() + 1, eventId, bookedDay, postings);
+        return append(eventId, bookedDay, postings, List.of());
+    }
+
+    /** Records already-decided outcomes together with their postings. */
+    Entry append(String eventId, int bookedDay, List<Posting> postings, List<Authorization> authorizations) {
+        var entry = new Entry(lastSequence() + 1, eventId, bookedDay, postings, authorizations);
 
         for (final var existing : entries) {
             if (existing.eventId().equals(eventId)) {
-                if (existing.bookedDay() != bookedDay || !existing.postings().equals(entry.postings())) {
+                if (existing.bookedDay() != bookedDay || !existing.postings().equals(entry.postings())
+                        || !existing.authorizations().equals(entry.authorizations())) {
                     throw new IllegalArgumentException("Conflicting event ID: " + eventId);
                 }
                 return existing;
             }
         }
         for (var posting : entry.postings()) {
-            if (openingBalance(posting.accountId()).currency() != posting.delta().currency()) {
-                throw new IllegalArgumentException("Currency mismatch for account: " + posting.accountId());
-            }
+            validateCurrency(posting.accountId(), posting.delta());
+        }
+        for (var authorization : entry.authorizations()) {
+            validateCurrency(authorization.accountId(), authorization.amount());
         }
         entries.add(entry);
         return entry;
@@ -91,6 +99,12 @@ public final class Journal {
         return List.copyOf(entries);
     }
 
+    private void validateCurrency(String accountId, Money amount) {
+        if (openingBalance(accountId).currency() != amount.currency()) {
+            throw new IllegalArgumentException("Currency mismatch for account: " + accountId);
+        }
+    }
+
     private Money openingBalance(String accountId) {
         var opening = openingBalances.get(accountId);
         if (opening == null) {
@@ -100,15 +114,17 @@ public final class Journal {
     }
 
     /**
-     * Immutable record of one event's postings, all visible together at one sequence.
-     * For example, the three installments of E10 belong to one entry.
+     * Immutable record of one event's postings and decisions, all visible together
+     * at one sequence. E10 has three postings; E3 has a decision and no postings.
      *
      * @param sequence journal-assigned position starting at one, independent of event IDs and dates
      * @param eventId identity used to detect duplicate or conflicting submissions
      * @param bookedDay positive booking day declared by the event
      * @param postings ordered, defensively copied movements, each with its own value day
+     * @param authorizations ordered, defensively copied decisions made when processing the event
      */
-    public record Entry(long sequence, String eventId, int bookedDay, List<Posting> postings) {
+    public record Entry(long sequence, String eventId, int bookedDay, List<Posting> postings,
+                        List<Authorization> authorizations) {
         public Entry {
             Objects.requireNonNull(eventId, "eventId");
             if (eventId.isBlank()) {
@@ -118,6 +134,7 @@ public final class Journal {
                 throw new IllegalArgumentException("Sequence and booked day must be positive");
             }
             postings = List.copyOf(postings);
+            authorizations = List.copyOf(authorizations);
         }
     }
 }
