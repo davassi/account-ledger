@@ -63,8 +63,8 @@ class JournalTest {
 
         assertEquals(before.sequence() + 1, late.sequence());
         assertEquals(3, late.postings().size());
-        assertEquals(List.of("E7", "E9", "E10"), journal.batches().stream().map(Journal.Batch::eventId).toList());
-        assertEquals(List.of(5, 6, 5), journal.batches().stream().map(Journal.Batch::bookedDay).toList());
+        assertEquals(List.of("E7", "E9", "E10"), journal.entries().stream().map(Journal.Entry::eventId).toList());
+        assertEquals(List.of(5, 6, 5), journal.entries().stream().map(Journal.Entry::bookedDay).toList());
         assertEquals(Money.of(BHD, "0.000"), journal.balance("ACC-002", 5, before.sequence()));
         assertEquals(Money.of(BHD, "10.000"), journal.balance("ACC-002", 5, late.sequence()));
         assertEquals(Money.of(AED, "0.00"), journal.balance("ACC-001", 5, late.sequence()));
@@ -76,7 +76,7 @@ class JournalTest {
         var retry = journal.append("E1", 1, List.of(aed(1, "1200.00")));
 
         assertEquals(original, retry);
-        assertEquals(List.of(original), journal.batches());
+        assertEquals(List.of(original), journal.entries());
         assertEquals(Money.of(AED, "1200.00"), journal.balance("ACC-001", 1, journal.lastSequence()));
     }
 
@@ -88,18 +88,18 @@ class JournalTest {
                 () -> journal.append("E1", 2, original.postings()));
         assertThrows(IllegalArgumentException.class,
                 () -> journal.append("E1", 1, List.of(aed(1, "950.00"))));
-        assertEquals(List.of(original), journal.batches());
+        assertEquals(List.of(original), journal.entries());
     }
 
     @ParameterizedTest
     @CsvSource({"UNKNOWN, AED", "ACC-001, BHD"})
-    void anInvalidPostingRejectsTheWholeBatch(String accountId, CurrencyUnit currency) {
+    void anInvalidPostingRejectsTheWholeEntry(String accountId, CurrencyUnit currency) {
         var original = journal.append("E1", 1, List.of(aed(1, "1200.00")));
         var invalid = new Posting(accountId, 1, Money.of(currency, "10"));
 
         assertThrows(IllegalArgumentException.class,
                 () -> journal.append("E2", 1, List.of(aed(1, "-950.00"), invalid)));
-        assertEquals(List.of(original), journal.batches());
+        assertEquals(List.of(original), journal.entries());
         assertEquals(Money.of(AED, "1200.00"), journal.balance("ACC-001", 1, journal.lastSequence()));
 
         var accepted = journal.append("E2", 1, List.of(aed(1, "-950.00")));
@@ -114,7 +114,7 @@ class JournalTest {
         accounts[0] = new Account("ACC-001", Money.of(AED, "1200.00"));
         var postings = new ArrayList<>(List.of(aed(1, "1200.00")));
         var first = isolated.append("E1", 1, postings);
-        var snapshot = isolated.batches();
+        var snapshot = isolated.entries();
         postings.clear();
 
         assertEquals(List.of(aed(1, "1200.00")), first.postings());
@@ -132,7 +132,7 @@ class JournalTest {
         assertThrows(IllegalArgumentException.class, () -> aed(day, "1200.00"));
         assertThrows(IllegalArgumentException.class, () -> journal.append("E1", day, List.of(aed(1, "1200.00"))));
         assertThrows(IllegalArgumentException.class, () -> journal.balance("ACC-001", day, 0));
-        assertEquals(List.of(), journal.batches());
+        assertEquals(List.of(), journal.entries());
     }
 
     @ParameterizedTest
@@ -156,12 +156,12 @@ class JournalTest {
     }
 
     @Test
-    void anEmptyBatchAdvancesKnowledgeWithoutMovingFunds() {
-        var batch = journal.append("NO-POSTINGS", 2, List.of());
+    void anEmptyEntryAdvancesKnowledgeWithoutMovingFunds() {
+        var entry = journal.append("NO-POSTINGS", 2, List.of());
 
-        assertEquals(List.of(batch), journal.batches());
+        assertEquals(List.of(entry), journal.entries());
         assertEquals(1, journal.lastSequence());
-        assertEquals(Money.of(AED, "0.00"), journal.balance("ACC-001", 2, batch.sequence()));
+        assertEquals(Money.of(AED, "0.00"), journal.balance("ACC-001", 2, entry.sequence()));
     }
 
     private Posting aed(int day, String amount) {
