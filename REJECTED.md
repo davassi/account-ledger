@@ -1,8 +1,9 @@
 # Criteri rifiutati
 
 Le conclusioni seguenti derivano dall'analisi della traccia. Il componente
-attualmente implementato è Money; le regole temporali saranno verificate nei
-componenti successivi.
+attualmente implementato è Money, inclusa la ripartizione esatta in rate; le
+regole temporali saranno verificate nei componenti successivi. Il caso E10 è
+coperto da MoneySplitTest per la conservazione del totale.
 
 | Criterio | Motivo del rifiuto |
 | --- | --- |
@@ -22,5 +23,5 @@ Auth-B risulta rifiutata, quindi un test separato dovrà esercitare il caso appr
 
 ## Approcci abbandonati durante l'implementazione
 
-Nessun approccio è stato implementato e poi abbandonato nel primo componente.
+Nessun approccio è stato implementato e poi abbandonato finora.
 Questa sezione verrà aggiornata soltanto quando ciò avverrà realmente.

@@ -14,6 +14,20 @@
 | 0.001 + 0.002 = 0.003 BHD | Verifica operazioni in millesimi; dimezzare 0.001 produrrebbe un input non rappresentabile. |
 | 1.00 AED e 1.000 BHD | Importi di uguale valore numerico usati per isolare l'incompatibilità delle valute. |
 
+## Ripartizione in rate
+
+| Numero | Origine e motivazione |
+| --- | --- |
+| 10.000 BHD in 3 rate | Caso E10: 10 000 millesimi divisi in tre producono 3.334, 3.333, 3.333. Importo e numero di rate sono imposti dalla traccia. |
+| 10.00 AED in 3 rate | Stesso valore nella valuta a due decimali: 3.34, 3.33, 3.33. Verifica che la scala segua la valuta. |
+| 1 unità minima | Massima differenza tra due rate e passo usato per distribuire il resto. Mezza unità non è rappresentabile. |
+| Segno -1, 0, +1 | Determina il verso delle unità residue: split di un importo negativo deve compensare le corrispondenti rate positive. |
+| 0.02 AED in 3 rate | Due unità minime e tre rate: 0.01, 0.01, 0.00. Verifica resto maggiore di uno e una rata zero. Il caso negativo verifica la stessa distribuzione con segno opposto. |
+| 9.00 AED in 3 rate | Caso con quoziente positivo e resto zero: tre rate da 3.00. |
+| 1 e 2 rate | Verificano il caso identità e una divisione esatta diversa dalle tre rate di E10; 10.000 BHD in due dà 5.000 per rata. |
+| 0 e -1 rate | Primo conteggio non valido e un conteggio negativo: entrambi rifiutati. |
+| 92233720368547758.08 AED | Sono 2^63 unità minime, appena oltre il massimo di long. Verifica che la ripartizione mantenga la precisione BigInteger; dimezzarlo nasconderebbe quel limite. |
+
 ## Versioni di build
 
 | Versione | Motivazione |
@@ -31,5 +45,5 @@ funzionale. Il progetto è verificato con Maven 3.6.3, presente nell'ambiente.
 
 La traccia impone sei giorni, saldi iniziali zero, una commissione AED 25.00,
 un tasso giornaliero dello 0.04% (fattore esatto 0.0004), un massimo di una
-commissione per conto e giorno, e tre rate per il credito BHD 10.000.
+commissione per conto e giorno.
 Questi valori non sono parametri scelti per ottimizzare un risultato.

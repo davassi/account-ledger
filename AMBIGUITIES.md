@@ -10,6 +10,10 @@
 | Valute diverse | Somma e sottrazione richiedono la stessa valuta. Nessuna conversione implicita. |
 | Valori mancanti | Valuta e importo obbligatori; usare le eccezioni standard Java. |
 | Limite massimo dell'importo | Nessun limite di business specificato; mantenere l'aritmetica BigDecimal esatta senza MathContext che tronchi i risultati. |
+| Rate uguali | Interpretarle come il più possibile uguali: dividere unità minime intere e assegnare il resto alle prime rate. La differenza massima è un'unità minima. |
+| Ripartizione di zero e importi negativi | Supportati. Il resto conserva il segno: dividere un importo opposto compensa le stesse rate, nelle stesse posizioni. |
+| Numero di rate e rate zero | Richiedere un conteggio positivo. Ammettere rate zero quando le unità minime disponibili sono meno delle rate richieste. |
+| Modificabilità delle rate | Restituire una lista immutabile di Money; una ripartizione calcolata conserva il suo totale. |
 
 ## Decisioni di lavoro per i componenti successivi
 
@@ -31,7 +35,6 @@
 | Interesse retrodatato | Rettificare gli accrual giornalieri mediante nuovi fatti; mantenere tali accrual fuori dal saldo spendibile fino alla capitalizzazione. |
 | Base dell'interesse | Saldo aggiornato dopo le fee, positivo soltanto. L'interesse del Giorno 6 è calcolato prima della capitalizzazione della finestra. |
 | Totale capitalizzato | Somma esatta dei sei accrual giornalieri arrotondati e rettificati; un solo accredito per conto e finestra. |
-| Rate uguali | Interpretarle come il più possibile uguali: distribuire unità minime, assegnando il resto alle prime rate. |
 | Duplicati | Stesso ID e stesso contenuto: nessun secondo effetto finanziario. Contenuto diverso con lo stesso ID: errore. |
 | Concorrenza e atomicità | Replay su un solo thread; registrare insieme tutti i fatti prodotti da un input valido. |
 | Fee in BHD | Importo non specificato e non necessario alla traccia. Un conto BHD negativo richiede una politica esplicita; non inventare un cambio o una fee BHD 25. |

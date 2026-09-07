@@ -1,8 +1,11 @@
 package accountledger;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.math.RoundingMode;
+import java.util.List;
 import java.util.Objects;
+import java.util.stream.IntStream;
 
 public record Money(CurrencyUnit currency, BigDecimal amount) {
     public Money {
@@ -28,5 +31,18 @@ public record Money(CurrencyUnit currency, BigDecimal amount) {
 
     public Money negate() {
         return new Money(currency, amount.negate());
+    }
+
+    public List<Money> split(int parts) {
+        if (parts <= 0) {
+            throw new IllegalArgumentException("Parts must be positive");
+        }
+        var division = amount.unscaledValue().divideAndRemainder(BigInteger.valueOf(parts));
+        int remainder = division[1].abs().intValueExact();
+        var adjustment = BigInteger.valueOf(amount.signum());
+        return IntStream.range(0, parts)
+                .mapToObj(i -> division[0].add(i < remainder ? adjustment : BigInteger.ZERO))
+                .map(units -> new Money(currency, new BigDecimal(units, currency.scale())))
+                .toList();
     }
 }
