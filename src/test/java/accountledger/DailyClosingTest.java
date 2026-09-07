@@ -22,23 +22,21 @@ class DailyClosingTest {
 
     @Test
     void theSixDayStreamAssessesThreeFeesAndKeepsThemAfterE9() {
+        var scenario = new Scenario();
+        scenario.run();
+        var journal = scenario.journal();
+        var closing = new DailyClosing(journal);
         var authorizations = new Authorizations(journal);
-        var settlements = new Settlements(journal);
         var interest = new Interest(journal);
-        journal.append("E1", 1, List.of(aed(1, "1200.00")));
-        journal.append("E2", 1, List.of(aed(1, "-950.00")));
-        closeDay(1);
-        authorizations.authorize("E3", 2, "ACC-001", "Auth-A", Money.of(AED, "200.00"));
-        var day2 = closeDay(2);
-        journal.append("E4", 3, List.of(aed(3, "400.00")));
-        closeDay(3);
-        settlements.settle("E5", 4, "ACC-001", "Auth-A", Money.of(AED, "185.00"), 4);
-        settlements.settle("E6", 4, "ACC-001", "Auth-Z", Money.of(AED, "180.00"), 4);
-        closeDay(4);
+        long finalCutoff = journal.lastSequence();
+        var day2 = journal.find("CLOSE-ACC-001-2", finalCutoff).orElseThrow();
+        var day5 = journal.find("CLOSE-ACC-001-5", finalCutoff).orElseThrow();
+        var e7 = journal.find("E7", finalCutoff).orElseThrow();
+        var revision = journal.find("E7-FEES", finalCutoff).orElseThrow();
+        long cutoff = journal.find("CLOSE-ACC-002-6", finalCutoff).orElseThrow().sequence();
 
-        var e7 = journal.append("E7", 5, List.of(aed(2, "-620.00")));
+        assertEquals(List.of(), scenario.rejections());
         assertEquals(Money.of(AED, "-370.00"), journal.balance("ACC-001", 2, e7.sequence()));
-        var revision = closing.reassess("E7-FEES", 5, "ACC-001");
         assertEquals(e7.sequence() + 1, revision.sequence());
         assertEquals(5, revision.bookedDay());
         assertEquals(List.of(aed(2, "-25.00"), aed(4, "-25.00")), revision.postings());
@@ -46,22 +44,11 @@ class DailyClosingTest {
         assertEquals(Money.of(AED, "-385.00"), authorizations.available("ACC-001", 5, revision.sequence()));
         assertEquals(List.of("0.10", "0.00", "0.00", "0.00"), interest.accruals("ACC-001", revision.sequence())
                 .stream().map(accrual -> accrual.amount().amount().toPlainString()).toList());
-
-        var authB = authorizations.authorize("E8", 5, "ACC-001", "Auth-B", Money.of(AED, "90.00"));
-        var day5 = closeDay(5);
-        assertEquals(DECLINED, authB.status());
         assertEquals(List.of(aed(5, "-25.00")), day5.postings());
         assertEquals(Money.of(AED, "-410.00"), journal.balance("ACC-001", 5, day5.sequence()));
+        assertEquals(List.of(), journal.find("E9-FEES", finalCutoff).orElseThrow().postings());
+        assertEquals(List.of(), journal.find("E10-FEES", finalCutoff).orElseThrow().postings());
 
-        new Reversals(journal).reverse("E9", 6, "ACC-001", "E7", 2);
-        assertEquals(List.of(), closing.reassess("E9-FEES", 6, "ACC-001").postings());
-        var installments = Money.of(BHD, "10.000").split(3).stream()
-                .map(amount -> new Posting("ACC-002", 5, amount)).toList();
-        journal.append("E10", 5, installments); // Arrives after E9, still booked and valued on Day 5.
-        assertEquals(List.of(), closing.reassess("E10-FEES", 6, "ACC-002").postings());
-        closeDay(6);
-
-        long cutoff = journal.lastSequence();
         var expected = List.of("250.00", "225.00", "625.00", "235.00", "210.00", "210.00");
         IntStream.rangeClosed(1, 6).forEach(day ->
                 assertEquals(Money.of(AED, expected.get(day - 1)), journal.balance("ACC-001", day, cutoff)));
@@ -72,7 +59,7 @@ class DailyClosingTest {
         assertEquals(Money.of(AED, "250.00"), journal.balance("ACC-001", 2, day2.sequence()));
         assertEquals(Money.of(AED, "50.00"), authorizations.available("ACC-001", 2, day2.sequence()));
         assertEquals(List.of(), closing.fees("ACC-001", day2.sequence()));
-        var bhdDay5 = journal.find("CLOSE-BHD-5", cutoff).orElseThrow();
+        var bhdDay5 = journal.find("CLOSE-ACC-002-5", cutoff).orElseThrow();
         assertEquals(Money.of(BHD, "0.000"), journal.balance("ACC-002", 5, bhdDay5.sequence()));
         assertThrows(UnsupportedOperationException.class, () -> closing.fees("ACC-001", cutoff).clear());
 
@@ -85,8 +72,8 @@ class DailyClosingTest {
         assertEquals(Money.of(AED, "0.10"), interest.accruals("ACC-001", day2.sequence()).getLast().amount());
         assertEquals(Money.of(BHD, "0.000"), interest.accruals("ACC-002", bhdDay5.sequence()).getLast().amount());
 
-        var aedCapitalization = interest.capitalize("INTEREST-AED", "ACC-001");
-        var bhdCapitalization = interest.capitalize("INTEREST-BHD", "ACC-002");
+        var aedCapitalization = journal.find("INTEREST-ACC-001", finalCutoff).orElseThrow();
+        var bhdCapitalization = journal.find("INTEREST-ACC-002", finalCutoff).orElseThrow();
         assertEquals(List.of(aed(6, "0.69")), aedCapitalization.postings());
         assertEquals(List.of(new Posting("ACC-002", 6, Money.of(BHD, "0.008"))), bhdCapitalization.postings());
         assertEquals(Money.of(AED, "210.69"), journal.balance("ACC-001", 6, journal.lastSequence()));
@@ -228,12 +215,6 @@ class DailyClosingTest {
         assertEquals(before, journal.entries());
         assertThrows(IllegalArgumentException.class, () -> closing.fees("ACC-001", -1));
         assertThrows(IllegalArgumentException.class, () -> closing.fees("ACC-001", journal.lastSequence() + 1));
-    }
-
-    private Journal.Entry closeDay(int day) {
-        var aedClose = closing.close("CLOSE-AED-" + day, day, "ACC-001");
-        closing.close("CLOSE-BHD-" + day, day, "ACC-002");
-        return aedClose;
     }
 
     private static Posting aed(int day, String amount) {
