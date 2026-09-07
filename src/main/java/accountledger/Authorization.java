@@ -17,7 +17,7 @@ public record Authorization(String accountId, String id, Money amount, Status st
         if (accountId.isBlank() || id.isBlank()) {
             throw new IllegalArgumentException("Account and authorization IDs must not be blank");
         }
-        if (amount.amount().signum() <= 0) {
+        if (amount.signum() <= 0) {
             throw new IllegalArgumentException("Authorization amount must be positive");
         }
     }

@@ -33,6 +33,19 @@ public record Money(CurrencyUnit currency, BigDecimal amount) {
         return new Money(currency, amount.negate());
     }
 
+    /** Returns -1, 0 or 1 for a negative, zero or positive amount. */
+    public int signum() {
+        return amount.signum();
+    }
+
+    /**
+     * Multiplies exactly, then rounds once to this currency's scale. The caller
+     * chooses the rounding policy; UNNECESSARY rejects any lost precision.
+     */
+    public Money multiply(BigDecimal factor, RoundingMode roundingMode) {
+        return new Money(currency, amount.multiply(factor).setScale(currency.scale(), roundingMode));
+    }
+
     public List<Money> split(int parts) {
         if (parts <= 0) {
             throw new IllegalArgumentException("Parts must be positive");

@@ -33,7 +33,7 @@ public final class Authorizations {
             }
             var remaining = available(accountId, day, cutoff).subtract(amount);
             var decision = new Authorization(accountId, authorizationId, amount,
-                    remaining.amount().signum() >= 0 ? APPROVED : DECLINED);
+                    remaining.signum() >= 0 ? APPROVED : DECLINED);
             return new Journal.Effects(List.of(), List.of(decision));
         });
         return entry.authorizations().getFirst();
