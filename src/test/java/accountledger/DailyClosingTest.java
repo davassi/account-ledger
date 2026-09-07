@@ -1,0 +1,220 @@
+package accountledger;
+
+import java.util.List;
+import java.util.stream.IntStream;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+
+import static accountledger.Authorization.Status.DECLINED;
+import static accountledger.Authorization.Status.SETTLED;
+import static accountledger.CurrencyUnit.AED;
+import static accountledger.CurrencyUnit.BHD;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+class DailyClosingTest {
+    private final Journal journal = new Journal(
+            new Account("ACC-001", Money.of(AED, "0.00")),
+            new Account("ACC-002", Money.of(BHD, "0.000")));
+    private final DailyClosing closing = new DailyClosing(journal);
+
+    @Test
+    void theSixDayStreamAssessesThreeFeesAndKeepsThemAfterE9() {
+        var authorizations = new Authorizations(journal);
+        var settlements = new Settlements(journal);
+        journal.append("E1", 1, List.of(aed(1, "1200.00")));
+        journal.append("E2", 1, List.of(aed(1, "-950.00")));
+        closeDay(1);
+        authorizations.authorize("E3", 2, "ACC-001", "Auth-A", Money.of(AED, "200.00"));
+        var day2 = closeDay(2);
+        journal.append("E4", 3, List.of(aed(3, "400.00")));
+        closeDay(3);
+        settlements.settle("E5", 4, "ACC-001", "Auth-A", Money.of(AED, "185.00"), 4);
+        settlements.settle("E6", 4, "ACC-001", "Auth-Z", Money.of(AED, "180.00"), 4);
+        closeDay(4);
+
+        var e7 = journal.append("E7", 5, List.of(aed(2, "-620.00")));
+        assertEquals(Money.of(AED, "-370.00"), journal.balance("ACC-001", 2, e7.sequence()));
+        var revision = closing.reassess("E7-FEES", 5, "ACC-001");
+        assertEquals(e7.sequence() + 1, revision.sequence());
+        assertEquals(5, revision.bookedDay());
+        assertEquals(List.of(aed(2, "-25.00"), aed(4, "-25.00")), revision.postings());
+        assertEquals(Money.of(AED, "5.00"), journal.balance("ACC-001", 3, revision.sequence()));
+        assertEquals(Money.of(AED, "-385.00"), authorizations.available("ACC-001", 5, revision.sequence()));
+
+        var authB = authorizations.authorize("E8", 5, "ACC-001", "Auth-B", Money.of(AED, "90.00"));
+        var day5 = closeDay(5);
+        assertEquals(DECLINED, authB.status());
+        assertEquals(List.of(aed(5, "-25.00")), day5.postings());
+        assertEquals(Money.of(AED, "-410.00"), journal.balance("ACC-001", 5, day5.sequence()));
+
+        new Reversals(journal).reverse("E9", 6, "ACC-001", "E7", 2);
+        assertEquals(List.of(), closing.reassess("E9-FEES", 6, "ACC-001").postings());
+        var installments = Money.of(BHD, "10.000").split(3).stream()
+                .map(amount -> new Posting("ACC-002", 5, amount)).toList();
+        journal.append("E10", 5, installments); // Arrives after E9, still booked and valued on Day 5.
+        assertEquals(List.of(), closing.reassess("E10-FEES", 6, "ACC-002").postings());
+        closeDay(6);
+
+        long cutoff = journal.lastSequence();
+        var expected = List.of("250.00", "225.00", "625.00", "235.00", "210.00", "210.00");
+        IntStream.rangeClosed(1, 6).forEach(day ->
+                assertEquals(Money.of(AED, expected.get(day - 1)), journal.balance("ACC-001", day, cutoff)));
+        assertEquals(List.of(aed(2, "-25.00"), aed(4, "-25.00"), aed(5, "-25.00")), closing.fees("ACC-001", cutoff));
+        assertEquals(List.of(), closing.fees("ACC-002", cutoff));
+        assertEquals(Money.of(BHD, "10.000"), journal.balance("ACC-002", 5, cutoff));
+        assertEquals(List.of(SETTLED, DECLINED), authorizations.states(cutoff).stream().map(Authorization::status).toList());
+        assertEquals(Money.of(AED, "250.00"), journal.balance("ACC-001", 2, day2.sequence()));
+        assertEquals(Money.of(AED, "50.00"), authorizations.available("ACC-001", 2, day2.sequence()));
+        assertEquals(List.of(), closing.fees("ACC-001", day2.sequence()));
+        var bhdDay5 = journal.find("CLOSE-BHD-5", cutoff).orElseThrow();
+        assertEquals(Money.of(BHD, "0.000"), journal.balance("ACC-002", 5, bhdDay5.sequence()));
+        assertThrows(UnsupportedOperationException.class, () -> closing.fees("ACC-001", cutoff).clear());
+    }
+
+    @Test
+    void anEarlierFeeCanMakeAnotherDayNegative() {
+        closing.close("C1", 1, "ACC-001");
+        var originalClose = closing.close("C2", 2, "ACC-001");
+        var late = journal.append("LATE", 3, List.of(aed(1, "-10.00"), aed(2, "20.00")));
+        var revision = closing.reassess("REASSESS", 3, "ACC-001");
+
+        assertEquals(Money.of(AED, "10.00"), journal.balance("ACC-001", 2, late.sequence()));
+        assertEquals(List.of(aed(1, "-25.00"), aed(2, "-25.00")), revision.postings());
+        assertEquals(late.sequence() + 1, revision.sequence());
+        assertEquals(Money.of(AED, "-40.00"), journal.balance("ACC-001", 2, revision.sequence()));
+        assertEquals(Money.of(AED, "0.00"), journal.balance("ACC-001", 2, originalClose.sequence()));
+        var day3 = closing.close("C3", 3, "ACC-001");
+        assertEquals(List.of(aed(3, "-25.00")), day3.postings());
+        assertEquals(Money.of(AED, "-65.00"), journal.balance("ACC-001", 3, day3.sequence()));
+    }
+
+    @Test
+    void closingAlsoCatchesUpAnyUnassessedPastDays() {
+        closing.close("C1", 1, "ACC-001");
+        journal.append("LATE", 2, List.of(aed(1, "-10.00")));
+        var day2 = closing.close("C2", 2, "ACC-001");
+
+        assertEquals(List.of(aed(1, "-25.00"), aed(2, "-25.00")), day2.postings());
+        assertEquals(Money.of(AED, "-60.00"), journal.balance("ACC-001", 2, day2.sequence()));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"0.00, 0.00, 0", "0.01, 0.01, 0", "-0.01, -25.01, 1"})
+    void feesRequireAStrictlyNegativeLedgerBalance(String amount, String expected, int count) {
+        journal.append("POSTING", 1, List.of(aed(1, amount)));
+        var close = closing.close("C1", 1, "ACC-001");
+
+        assertEquals(count, close.postings().size());
+        assertEquals(Money.of(AED, expected), journal.balance("ACC-001", 1, close.sequence()));
+    }
+
+    @Test
+    void holdsDoNotDetermineOverdraftFees() {
+        journal.append("FUND", 1, List.of(aed(1, "200.00")));
+        var authorizations = new Authorizations(journal);
+        authorizations.authorize("HOLD", 1, "ACC-001", "A", Money.of(AED, "200.00"));
+        journal.append("DEBIT", 1, List.of(aed(1, "-200.00")));
+        var close = closing.close("C1", 1, "ACC-001");
+
+        assertEquals(List.of(), close.postings());
+        assertEquals(Money.of(AED, "0.00"), journal.balance("ACC-001", 1, close.sequence()));
+        assertEquals(Money.of(AED, "-200.00"), authorizations.available("ACC-001", 1, close.sequence()));
+    }
+
+    @Test
+    void futureValuePostingsCannotTriggerFeesEarly() {
+        journal.append("FUTURE", 1, List.of(aed(3, "-10.00")));
+        closing.close("C1", 1, "ACC-001");
+        assertEquals(List.of(), closing.reassess("REASSESS", 2, "ACC-001").postings());
+        assertEquals(List.of(), closing.close("C2", 2, "ACC-001").postings());
+        assertEquals(List.of(aed(3, "-25.00")), closing.close("C3", 3, "ACC-001").postings());
+    }
+
+    @Test
+    void retriesAndRebuiltComponentsPreserveClosesAndAssessments() {
+        var day1 = closing.close("C1", 1, "ACC-001");
+        journal.append("LATE", 2, List.of(aed(1, "-10.00")));
+        assertSame(day1, closing.close("C1", 1, "ACC-001"));
+        assertEquals(List.of(), day1.postings());
+
+        var revision = closing.reassess("R2", 2, "ACC-001");
+        var rebuilt = new DailyClosing(journal);
+        var day2 = rebuilt.close("C2", 2, "ACC-001");
+        var before = journal.entries();
+        assertSame(revision, rebuilt.reassess("R2", 2, "ACC-001"));
+        assertSame(day2, closing.close("C2", 2, "ACC-001"));
+        assertThrows(IllegalArgumentException.class, () -> rebuilt.close("ANOTHER-C2", 2, "ACC-001"));
+        assertEquals(before, journal.entries());
+        assertEquals(List.of(), rebuilt.reassess("R3", 3, "ACC-001").postings());
+        assertEquals(List.of(aed(1, "-25.00"), aed(2, "-25.00")), rebuilt.fees("ACC-001", journal.lastSequence()));
+    }
+
+    @Test
+    void anExplicitFeeRefundDoesNotPermitAnotherAssessmentForThatDay() {
+        journal.append("DEBIT", 1, List.of(aed(1, "-10.00")));
+        var day1 = closing.close("C1", 1, "ACC-001");
+        new Reversals(journal).reverse("REFUND", 2, "ACC-001", "C1", 1);
+        var revision = closing.reassess("R2", 2, "ACC-001");
+
+        assertEquals(List.of(), revision.postings());
+        assertEquals(day1.postings(), closing.fees("ACC-001", revision.sequence()));
+        assertEquals(Money.of(AED, "-10.00"), journal.balance("ACC-001", 1, revision.sequence()));
+    }
+
+    @Test
+    void negativeBhdRequiresAFeePolicyAndDoesNotRecordAPartialClose() {
+        journal.append("BHD-DEBIT", 1, List.of(new Posting("ACC-002", 1, Money.of(BHD, "-0.001"))));
+        var before = journal.entries();
+        assertThrows(IllegalArgumentException.class, () -> closing.close("BHD-C1", 1, "ACC-002"));
+        assertEquals(before, journal.entries());
+
+        journal.append("BHD-CREDIT", 1, List.of(new Posting("ACC-002", 1, Money.of(BHD, "0.001"))));
+        assertEquals(List.of(), closing.close("BHD-C1", 1, "ACC-002").postings());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"0, ACC-001", "-1, ACC-001", "2, ACC-001", "1, UNKNOWN"})
+    void invalidClosesDoNotConsumeAnEventId(int day, String accountId) {
+        assertThrows(IllegalArgumentException.class, () -> closing.close("C1", day, accountId));
+        assertEquals(List.of(), journal.entries());
+        assertEquals(1, closing.close("C1", 1, "ACC-001").sequence());
+    }
+
+    @Test
+    void reassessmentCannotPrecedeTheDaysItRechecks() {
+        assertThrows(IllegalArgumentException.class, () -> closing.reassess("R1", 1, "ACC-001"));
+        closing.close("C1", 1, "ACC-001");
+        closing.close("C2", 2, "ACC-001");
+        var before = journal.entries();
+
+        assertThrows(IllegalArgumentException.class, () -> closing.reassess("R1", 1, "ACC-001"));
+        assertEquals(before, journal.entries());
+        assertEquals(List.of(), closing.reassess("R1", 2, "ACC-001").postings());
+    }
+
+    @Test
+    void changingTheAccountDayOrOperationIsNotARetry() {
+        closing.close("C1", 1, "ACC-001");
+        var before = journal.entries();
+
+        assertThrows(IllegalArgumentException.class, () -> closing.close("C1", 1, "ACC-002"));
+        assertThrows(IllegalArgumentException.class, () -> closing.close("C1", 2, "ACC-001"));
+        assertThrows(IllegalArgumentException.class, () -> closing.reassess("C1", 1, "ACC-001"));
+        assertEquals(before, journal.entries());
+        assertThrows(IllegalArgumentException.class, () -> closing.fees("ACC-001", -1));
+        assertThrows(IllegalArgumentException.class, () -> closing.fees("ACC-001", journal.lastSequence() + 1));
+    }
+
+    private Journal.Entry closeDay(int day) {
+        var aedClose = closing.close("CLOSE-AED-" + day, day, "ACC-001");
+        closing.close("CLOSE-BHD-" + day, day, "ACC-002");
+        return aedClose;
+    }
+
+    private static Posting aed(int day, String amount) {
+        return new Posting("ACC-001", day, Money.of(AED, amount));
+    }
+}
