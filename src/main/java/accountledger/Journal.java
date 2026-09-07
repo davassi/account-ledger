@@ -10,7 +10,7 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
- * In-memory, append-only history of postings, authorization states and diagnostics,
+ * In-memory, append-only history of postings, authorization states, diagnostics and accruals,
  * grouped by event, for a fixed set of accounts.
  * Entries and exposed snapshots are immutable. Designed for single-threaded replay.
  */
@@ -61,6 +61,7 @@ public final class Journal {
         var entry = new Entry(lastSequence() + 1, request, decide.get());
         entry.postings().forEach(posting -> validateCurrency(posting.accountId(), posting.delta()));
         entry.authorizations().forEach(auth -> validateCurrency(auth.accountId(), auth.amount()));
+        entry.accruals().forEach(accrual -> validateCurrency(accrual.accountId(), accrual.amount()));
         entries.add(entry);
         return entry;
     }
@@ -155,18 +156,25 @@ public final class Journal {
         public List<Posting> postings() { return effects.postings(); }
         public List<Authorization> authorizations() { return effects.authorizations(); }
         public List<Diagnostic> diagnostics() { return effects.diagnostics(); }
+        public List<Accrual> accruals() { return effects.accruals(); }
     }
 
-    /** Postings, state changes and anomalies become visible together in a single entry. */
-    public record Effects(List<Posting> postings, List<Authorization> authorizations, List<Diagnostic> diagnostics) {
+    /** Monetary effects and non-spendable facts become visible together in a single entry. */
+    public record Effects(List<Posting> postings, List<Authorization> authorizations,
+                          List<Diagnostic> diagnostics, List<Accrual> accruals) {
         public Effects(List<Posting> postings, List<Authorization> authorizations) {
             this(postings, authorizations, List.of());
+        }
+
+        public Effects(List<Posting> postings, List<Authorization> authorizations, List<Diagnostic> diagnostics) {
+            this(postings, authorizations, diagnostics, List.of());
         }
 
         public Effects {
             postings = List.copyOf(postings);
             authorizations = List.copyOf(authorizations);
             diagnostics = List.copyOf(diagnostics);
+            accruals = List.copyOf(accruals);
         }
     }
 }

@@ -19,7 +19,8 @@ public record Request(String eventId, int bookedDay, Data data) {
     }
 
     /** The record type distinguishes the operation as well as its input fields. */
-    public sealed interface Data permits Postings, Hold, Settlement, Reversal, DayClose, FeeReassessment {}
+    public sealed interface Data permits Postings, Hold, Settlement, Reversal, DayClose, FeeReassessment,
+            InterestCapitalization {}
 
     public record Postings(List<Posting> postings) implements Data {
         public Postings {
@@ -36,9 +37,12 @@ public record Request(String eventId, int bookedDay, Data data) {
     /** Amounts and currency come from the original event, not from the reversal request. */
     public record Reversal(String accountId, String originalEventId, int valueDay) implements Data {}
 
-    /** Closes the request's booked day, including any newly assessed fees. */
+    /** Closes the request's booked day, including fees and updated interest accruals. */
     public record DayClose(String accountId) implements Data {}
 
     /** Rechecks already closed days using the knowledge available when recorded. */
     public record FeeReassessment(String accountId) implements Data {}
+
+    /** Credits the sum of rounded accruals once, at the end of the six-day window. */
+    public record InterestCapitalization(String accountId) implements Data {}
 }

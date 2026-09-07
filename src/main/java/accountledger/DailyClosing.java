@@ -6,13 +6,15 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-/** Records daily closes and overdraft fees, preserving all earlier views. */
+/** Records closes, overdraft fees and interest accruals, preserving all earlier views. */
 public final class DailyClosing {
     private static final Money OVERDRAFT_FEE = Money.of(CurrencyUnit.AED, "25.00");
     private final Journal journal;
+    private final Interest interest;
 
     public DailyClosing(Journal journal) {
         this.journal = Objects.requireNonNull(journal, "journal");
+        this.interest = new Interest(journal);
     }
 
     /** Closes the next day for this account; the returned sequence includes its fees. */
@@ -23,7 +25,7 @@ public final class DailyClosing {
             if (day != lastClosedDay(accountId, cutoff) + 1) {
                 throw new IllegalArgumentException("Close days in order, starting at Day 1");
             }
-            return new Journal.Effects(feesToAssess(accountId, day, cutoff), List.of());
+            return closingEffects(accountId, day, cutoff);
         });
     }
 
@@ -36,7 +38,7 @@ public final class DailyClosing {
             if (throughDay == 0 || processingDay < throughDay) {
                 throw new IllegalArgumentException("Reassessment requires closed days at or before the processing day");
             }
-            return new Journal.Effects(feesToAssess(accountId, throughDay, cutoff), List.of());
+            return closingEffects(accountId, throughDay, cutoff);
         });
     }
 
@@ -56,6 +58,12 @@ public final class DailyClosing {
                         && close.accountId().equals(accountId))
                 .mapToInt(Journal.Entry::bookedDay)
                 .max().orElse(0);
+    }
+
+    private Journal.Effects closingEffects(String accountId, int throughDay, long cutoff) {
+        var fees = feesToAssess(accountId, throughDay, cutoff);
+        var accruals = interest.calculate(accountId, throughDay, cutoff, fees);
+        return new Journal.Effects(fees, List.of(), List.of(), accruals);
     }
 
     private List<Posting> feesToAssess(String accountId, int throughDay, long cutoff) {

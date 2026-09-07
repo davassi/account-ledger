@@ -24,6 +24,7 @@ class DailyClosingTest {
     void theSixDayStreamAssessesThreeFeesAndKeepsThemAfterE9() {
         var authorizations = new Authorizations(journal);
         var settlements = new Settlements(journal);
+        var interest = new Interest(journal);
         journal.append("E1", 1, List.of(aed(1, "1200.00")));
         journal.append("E2", 1, List.of(aed(1, "-950.00")));
         closeDay(1);
@@ -43,6 +44,8 @@ class DailyClosingTest {
         assertEquals(List.of(aed(2, "-25.00"), aed(4, "-25.00")), revision.postings());
         assertEquals(Money.of(AED, "5.00"), journal.balance("ACC-001", 3, revision.sequence()));
         assertEquals(Money.of(AED, "-385.00"), authorizations.available("ACC-001", 5, revision.sequence()));
+        assertEquals(List.of("0.10", "0.00", "0.00", "0.00"), interest.accruals("ACC-001", revision.sequence())
+                .stream().map(accrual -> accrual.amount().amount().toPlainString()).toList());
 
         var authB = authorizations.authorize("E8", 5, "ACC-001", "Auth-B", Money.of(AED, "90.00"));
         var day5 = closeDay(5);
@@ -72,6 +75,25 @@ class DailyClosingTest {
         var bhdDay5 = journal.find("CLOSE-BHD-5", cutoff).orElseThrow();
         assertEquals(Money.of(BHD, "0.000"), journal.balance("ACC-002", 5, bhdDay5.sequence()));
         assertThrows(UnsupportedOperationException.class, () -> closing.fees("ACC-001", cutoff).clear());
+
+        var dailyAed = interest.accruals("ACC-001", cutoff);
+        assertEquals(List.of("0.10", "0.09", "0.25", "0.09", "0.08", "0.08"), dailyAed.stream()
+                .map(accrual -> accrual.amount().amount().toPlainString()).toList());
+        assertEquals(List.of("0.000", "0.000", "0.000", "0.000", "0.004", "0.004"),
+                interest.accruals("ACC-002", cutoff).stream()
+                        .map(accrual -> accrual.amount().amount().toPlainString()).toList());
+        assertEquals(Money.of(AED, "0.10"), interest.accruals("ACC-001", day2.sequence()).getLast().amount());
+        assertEquals(Money.of(BHD, "0.000"), interest.accruals("ACC-002", bhdDay5.sequence()).getLast().amount());
+
+        var aedCapitalization = interest.capitalize("INTEREST-AED", "ACC-001");
+        var bhdCapitalization = interest.capitalize("INTEREST-BHD", "ACC-002");
+        assertEquals(List.of(aed(6, "0.69")), aedCapitalization.postings());
+        assertEquals(List.of(new Posting("ACC-002", 6, Money.of(BHD, "0.008"))), bhdCapitalization.postings());
+        assertEquals(Money.of(AED, "210.69"), journal.balance("ACC-001", 6, journal.lastSequence()));
+        assertEquals(Money.of(BHD, "10.008"), journal.balance("ACC-002", 6, journal.lastSequence()));
+        assertEquals(dailyAed, interest.accruals("ACC-001", journal.lastSequence()));
+        assertEquals(3, closing.fees("ACC-001", journal.lastSequence()).size());
+        assertEquals(Money.of(AED, "210.00"), journal.balance("ACC-001", 6, cutoff));
     }
 
     @Test
