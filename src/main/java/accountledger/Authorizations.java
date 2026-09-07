@@ -27,15 +27,10 @@ public final class Authorizations {
      * have changed. An authorization ID can be used only once per account.
      */
     public Authorization authorize(String eventId, int day, String accountId, String authorizationId, Money amount) {
-        var request = new Request(eventId, day, new Request.Hold(accountId, authorizationId, amount));
+        var hold = new Request.Hold(accountId, authorizationId, amount);
+        var request = new Request(eventId, day, hold);
         var entry = journal.append(request, () -> {
-            long cutoff = journal.lastSequence();
-            if (find(accountId, authorizationId, cutoff).isPresent() || wasSettled(accountId, authorizationId, cutoff)) {
-                throw new IllegalArgumentException("Authorization ID already used for account: " + authorizationId);
-            }
-            var remaining = available(accountId, day, cutoff).subtract(amount);
-            var decision = new Authorization(accountId, authorizationId, amount,
-                    remaining.signum() >= 0 ? APPROVED : DECLINED);
+            var decision = decide(hold, day, journal.lastSequence());
             return new Journal.Effects(List.of(), List.of(decision));
         });
         return entry.authorizations().getFirst();
@@ -84,6 +79,17 @@ public final class Authorizations {
                 .anyMatch(data -> data instanceof Request.Settlement settlement
                         && settlement.accountId().equals(accountId)
                         && settlement.authorizationId().equals(authorizationId));
+    }
+
+    private Authorization decide(Request.Hold hold, int day, long cutoff) {
+        var accountId = hold.accountId();
+        var authorizationId = hold.authorizationId();
+        if (find(accountId, authorizationId, cutoff).isPresent() || wasSettled(accountId, authorizationId, cutoff)) {
+            throw new IllegalArgumentException("Authorization ID already used for account: " + authorizationId);
+        }
+        var remaining = available(accountId, day, cutoff).subtract(hold.amount());
+        var status = remaining.signum() >= 0 ? APPROVED : DECLINED;
+        return new Authorization(accountId, authorizationId, hold.amount(), status);
     }
 
     private record Key(String accountId, String authorizationId) {}

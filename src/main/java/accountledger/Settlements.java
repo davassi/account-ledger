@@ -28,31 +28,35 @@ public final class Settlements {
      */
     public Journal.Entry settle(String eventId, int bookedDay, String accountId, String authorizationId,
                                 Money amount, int valueDay) {
-        var data = new Request.Settlement(accountId, authorizationId, amount, valueDay);
-        var request = new Request(eventId, bookedDay, data);
+        var settlement = new Request.Settlement(accountId, authorizationId, amount, valueDay);
+        var request = new Request(eventId, bookedDay, settlement);
         return journal.append(request, () -> {
-            Objects.requireNonNull(authorizationId, "authorizationId");
-            Objects.requireNonNull(amount, "amount");
-            if (authorizationId.isBlank() || amount.signum() <= 0) {
-                throw new IllegalArgumentException("Settlement requires an authorization ID and a positive amount");
-            }
-            var postings = List.of(new Posting(accountId, valueDay, amount.negate()));
             long cutoff = journal.lastSequence();
-            if (authorizations.wasSettled(accountId, authorizationId, cutoff)) {
-                throw new IllegalArgumentException("Authorization reference already settled: " + authorizationId);
-            }
-
+            var postings = List.of(prepareDebit(settlement, cutoff));
             var original = authorizations.find(accountId, authorizationId, cutoff);
             if (original.isEmpty()) {
                 return new Journal.Effects(postings, List.of(), List.of(MISSING_AUTHORIZATION));
             }
-            var hold = original.get();
-            if (hold.status() == DECLINED) {
+            var authorization = original.get();
+            if (authorization.status() == DECLINED) {
                 return new Journal.Effects(postings, List.of(), List.of(DECLINED_AUTHORIZATION));
             }
 
-            var settled = new Authorization(accountId, authorizationId, hold.amount(), SETTLED);
+            var settled = new Authorization(accountId, authorizationId, authorization.amount(), SETTLED);
             return new Journal.Effects(postings, List.of(settled));
         });
+    }
+
+    private Posting prepareDebit(Request.Settlement settlement, long cutoff) {
+        var authorizationId = Objects.requireNonNull(settlement.authorizationId(), "authorizationId");
+        var amount = Objects.requireNonNull(settlement.amount(), "amount");
+        if (authorizationId.isBlank() || amount.signum() <= 0) {
+            throw new IllegalArgumentException("Settlement requires an authorization ID and a positive amount");
+        }
+        var debit = new Posting(settlement.accountId(), settlement.valueDay(), amount.negate());
+        if (authorizations.wasSettled(settlement.accountId(), authorizationId, cutoff)) {
+            throw new IllegalArgumentException("Authorization reference already settled: " + authorizationId);
+        }
+        return debit;
     }
 }
