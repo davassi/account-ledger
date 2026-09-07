@@ -34,7 +34,7 @@ class AuthorizationsTest {
 
         assertEquals(APPROVED, decision.status());
         assertEquals(Money.of(AED, "250.00"), journal.balance("ACC-001", 2, journal.lastSequence()));
-        assertEquals(Money.of(AED, "50.00"), authorizations.available("ACC-001", 2));
+        assertEquals(Money.of(AED, "50.00"), authorizations.available("ACC-001", 2, journal.lastSequence()));
         assertEquals(List.of(), journal.entries().getLast().postings());
         assertEquals(List.of(decision), journal.entries().getLast().authorizations());
     }
@@ -47,9 +47,9 @@ class AuthorizationsTest {
 
         assertEquals(APPROVED, exact.status());
         assertEquals(DECLINED, excess.status());
-        assertEquals(Money.of(AED, "0.00"), authorizations.available("ACC-001", 2));
+        assertEquals(Money.of(AED, "0.00"), authorizations.available("ACC-001", 2, journal.lastSequence()));
         assertEquals(List.of(APPROVED, APPROVED, DECLINED),
-                authorizations.decisions().stream().map(Authorization::status).toList());
+                authorizations.decisions(journal.lastSequence()).stream().map(Authorization::status).toList());
     }
 
     @Test
@@ -59,7 +59,7 @@ class AuthorizationsTest {
         journal.append("E7", 5, List.of(aed(2, "-620.00")));
 
         // This fixture isolates authorizations: no settlements or fees have been applied.
-        assertEquals(Money.of(AED, "-170.00"), authorizations.available("ACC-001", 5));
+        assertEquals(Money.of(AED, "-170.00"), authorizations.available("ACC-001", 5, journal.lastSequence()));
         long beforeRetry = journal.lastSequence();
         assertSame(authA, authorizations.authorize("E3", 2, "ACC-001", "Auth-A", Money.of(AED, "200.00")));
         assertEquals(beforeRetry, journal.lastSequence());
@@ -72,8 +72,8 @@ class AuthorizationsTest {
         var rebuilt = new Authorizations(journal);
         assertSame(authB, rebuilt.authorize("E8", 5, "ACC-001", "Auth-B", Money.of(AED, "90.00")));
         assertEquals(afterCompensation, journal.lastSequence());
-        assertEquals(List.of(authA, authB), rebuilt.decisions());
-        assertEquals(Money.of(AED, "450.00"), rebuilt.available("ACC-001", 6));
+        assertEquals(List.of(authA, authB), rebuilt.decisions(afterCompensation));
+        assertEquals(Money.of(AED, "450.00"), rebuilt.available("ACC-001", 6, afterCompensation));
     }
 
     @Test
@@ -82,9 +82,9 @@ class AuthorizationsTest {
         var decision = authorizations.authorize("H1", 2, "ACC-001", "A", Money.of(AED, "400.00"));
 
         assertEquals(DECLINED, decision.status());
-        assertEquals(Money.of(AED, "250.00"), authorizations.available("ACC-001", 2));
-        assertEquals(Money.of(AED, "650.00"), authorizations.available("ACC-001", 3));
-        assertEquals(DECLINED, authorizations.decisions().getFirst().status());
+        assertEquals(Money.of(AED, "250.00"), authorizations.available("ACC-001", 2, journal.lastSequence()));
+        assertEquals(Money.of(AED, "650.00"), authorizations.available("ACC-001", 3, journal.lastSequence()));
+        assertEquals(DECLINED, authorizations.decisions(journal.lastSequence()).getFirst().status());
     }
 
     @Test
@@ -96,8 +96,8 @@ class AuthorizationsTest {
 
         assertEquals(APPROVED, exact.status());
         assertEquals(DECLINED, excess.status());
-        assertEquals(Money.of(BHD, "0.000"), authorizations.available("ACC-002", 5));
-        assertEquals(Money.of(AED, "50.00"), authorizations.available("ACC-001", 5));
+        assertEquals(Money.of(BHD, "0.000"), authorizations.available("ACC-002", 5, journal.lastSequence()));
+        assertEquals(Money.of(AED, "50.00"), authorizations.available("ACC-001", 5, journal.lastSequence()));
     }
 
     @ParameterizedTest
@@ -136,7 +136,7 @@ class AuthorizationsTest {
         assertThrows(IllegalArgumentException.class,
                 () -> authorizations.authorize("H1", 2, accountId, "A", Money.of(currency, amount)));
         assertEquals(before, journal.entries());
-        assertEquals(List.of(), authorizations.decisions());
+        assertEquals(List.of(), authorizations.decisions(journal.lastSequence()));
     }
 
     @Test
@@ -169,8 +169,9 @@ class AuthorizationsTest {
         var invalid = new Authorization(accountId, "A", Money.of(currency, "200.00"), APPROVED);
         var before = journal.entries();
 
+        var request = new Request("MIXED", 2, new Request.Hold(accountId, "A", invalid.amount()));
         assertThrows(IllegalArgumentException.class,
-                () -> journal.append("MIXED", 2, List.of(aed(2, "400.00")), List.of(invalid)));
+                () -> journal.append(request, () -> new Journal.Effects(List.of(aed(2, "400.00")), List.of(invalid))));
         assertEquals(before, journal.entries());
     }
 
@@ -178,17 +179,14 @@ class AuthorizationsTest {
     void decisionCollectionsCannotBeUsedToRewriteHistory() {
         var authA = new Authorization("ACC-001", "A", Money.of(AED, "200.00"), APPROVED);
         var input = new ArrayList<>(List.of(authA));
-        var entry = journal.append("H1", 2, List.of(), input);
-        var snapshot = authorizations.decisions();
+        var request = new Request("H1", 2, new Request.Hold("ACC-001", "A", authA.amount()));
+        var entry = journal.append(request, () -> new Journal.Effects(List.of(), input));
+        var snapshot = authorizations.decisions(entry.sequence());
         input.clear();
 
         assertEquals(List.of(authA), entry.authorizations());
         assertThrows(UnsupportedOperationException.class, () -> entry.authorizations().clear());
         assertThrows(UnsupportedOperationException.class, snapshot::clear);
-        assertSame(entry, journal.append("H1", 2, List.of(), List.of(authA)));
-        assertThrows(IllegalArgumentException.class, () -> journal.append("H1", 2, List.of(),
-                List.of(new Authorization("ACC-001", "A", Money.of(AED, "200.00"), DECLINED))));
-
         authorizations.authorize("H2", 2, "ACC-001", "B", Money.of(AED, "90.00"));
         assertEquals(List.of(authA), snapshot);
         assertEquals(APPROVED, entry.authorizations().getFirst().status());
@@ -196,5 +194,59 @@ class AuthorizationsTest {
 
     private Posting aed(int day, String amount) {
         return new Posting("ACC-001", day, Money.of(AED, amount));
+    @Test
+    void anOriginalCloseExcludesLaterHoldsAndPostings() {
+        var authA = authorizations.authorize("E3", 2, "ACC-001", "Auth-A", Money.of(AED, "200.00"));
+        long day2Close = journal.lastSequence();
+        var original = journal.entries(day2Close);
+
+        var later = authorizations.authorize("LATER-HOLD", 5, "ACC-001", "Later", Money.of(AED, "50.00"));
+        long afterHold = journal.lastSequence();
+        journal.append("LATER-CREDIT", 5, List.of(aed(5, "400.00")));
+
+        assertEquals(Money.of(AED, "50.00"), authorizations.available("ACC-001", 2, day2Close));
+        assertEquals(List.of(authA), authorizations.decisions(day2Close));
+        assertEquals(original, journal.entries(day2Close));
+        assertThrows(UnsupportedOperationException.class, original::clear);
+        assertEquals(Money.of(AED, "0.00"), authorizations.available("ACC-001", 5, afterHold));
+        assertEquals(Money.of(AED, "400.00"), authorizations.available("ACC-001", 5, journal.lastSequence()));
+        assertEquals(List.of(authA, later), authorizations.decisions(journal.lastSequence()));
+    }
+
+    @Test
+    void backdatedPostingsChangeOnlyAvailableViewsThatIncludeThem() {
+        var authA = authorizations.authorize("E3", 2, "ACC-001", "Auth-A", Money.of(AED, "200.00"));
+        long day2Close = journal.lastSequence();
+        journal.append("E4", 3, List.of(aed(3, "400.00")));
+        var debit = journal.append("E7", 5, List.of(aed(2, "-620.00")));
+        var compensation = journal.append("E9", 6, List.of(aed(2, "620.00")));
+
+        assertEquals(Money.of(AED, "50.00"), authorizations.available("ACC-001", 2, day2Close));
+        assertEquals(Money.of(AED, "-570.00"), authorizations.available("ACC-001", 2, debit.sequence()));
+        assertEquals(Money.of(AED, "-170.00"), authorizations.available("ACC-001", 3, debit.sequence()));
+        assertEquals(Money.of(AED, "50.00"), authorizations.available("ACC-001", 2, compensation.sequence()));
+        assertEquals(List.of(authA), authorizations.decisions(debit.sequence()));
+        assertEquals(APPROVED, authA.status());
+    }
+
+    @Test
+    void sequenceZeroHasNoPostingsOrHolds() {
+        authorizations.authorize("E3", 2, "ACC-001", "Auth-A", Money.of(AED, "200.00"));
+
+        assertEquals(Money.of(AED, "0.00"), authorizations.available("ACC-001", 2, 0));
+        assertEquals(Money.of(BHD, "0.000"), authorizations.available("ACC-002", 2, 0));
+        assertEquals(List.of(), authorizations.decisions(0));
+        assertEquals(List.of(), journal.entries(0));
+    }
+
+    @Test
+    void everyHistoricalReadRejectsAnInvalidCutoff() {
+        for (long invalid : List.of(-1L, journal.lastSequence() + 1)) {
+            assertThrows(IllegalArgumentException.class, () -> authorizations.available("ACC-001", 2, invalid));
+            assertThrows(IllegalArgumentException.class, () -> authorizations.decisions(invalid));
+            assertThrows(IllegalArgumentException.class, () -> journal.entries(invalid));
+        }
+    }
+
     }
 }

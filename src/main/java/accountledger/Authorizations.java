@@ -25,36 +25,29 @@ public final class Authorizations {
      * have changed. An authorization ID can be used only once per account.
      */
     public Authorization authorize(String eventId, int day, String accountId, String authorizationId, Money amount) {
-        for (var entry : journal.entries()) {
-            if (entry.eventId().equals(eventId)) {
-                if (entry.bookedDay() == day && entry.postings().isEmpty() && entry.authorizations().size() == 1) {
-                    var original = entry.authorizations().getFirst();
-                    if (original.accountId().equals(accountId) && original.id().equals(authorizationId)
-                            && original.amount().equals(amount)) {
-                        return original;
-                    }
-                }
-                throw new IllegalArgumentException("Conflicting event ID: " + eventId);
+        var request = new Request(eventId, day, new Request.Hold(accountId, authorizationId, amount));
+        var entry = journal.append(request, () -> {
+            long cutoff = journal.lastSequence();
+            if (decisions(cutoff).stream().anyMatch(auth -> auth.accountId().equals(accountId) && auth.id().equals(authorizationId))) {
+                throw new IllegalArgumentException("Authorization ID already used for account: " + authorizationId);
             }
-        }
-        if (decisions().stream().anyMatch(auth -> auth.accountId().equals(accountId) && auth.id().equals(authorizationId))) {
-            throw new IllegalArgumentException("Authorization ID already used for account: " + authorizationId);
-        }
-        var remaining = available(accountId, day).subtract(amount);
-        var decision = new Authorization(accountId, authorizationId, amount,
-                remaining.amount().signum() >= 0 ? APPROVED : DECLINED);
-        journal.append(eventId, day, List.of(), List.of(decision));
-        return decision;
+            var remaining = available(accountId, day, cutoff).subtract(amount);
+            var decision = new Authorization(accountId, authorizationId, amount,
+                    remaining.amount().signum() >= 0 ? APPROVED : DECLINED);
+            return new Journal.Effects(List.of(), List.of(decision));
+        });
+        return entry.authorizations().getFirst();
     }
 
     /**
-     * Returns the current ledger balance minus all approved holds. The day is
-     * the runner's current day, used to exclude future-value postings. Holds
-     * take effect when recorded and have no implicit expiry.
+     * Subtracts holds known at the cutoff from the ledger balance at that same
+     * cutoff. The value day filters monetary postings; holds take effect at their
+     * recording sequence. To reproduce an original daily close, use its saved
+     * sequence. Later entries cannot change that view or its recorded decisions.
      */
-    public Money available(String accountId, int day) {
-        var balance = journal.balance(accountId, day, journal.lastSequence());
-        for (var auth : decisions()) {
+    public Money available(String accountId, int valueDay, long knownThroughSequence) {
+        var balance = journal.balance(accountId, valueDay, knownThroughSequence);
+        for (var auth : decisions(knownThroughSequence)) {
             if (auth.accountId().equals(accountId) && auth.status() == APPROVED) {
                 balance = balance.subtract(auth.amount());
             }
@@ -62,9 +55,9 @@ public final class Authorizations {
         return balance;
     }
 
-    /** Returns an immutable snapshot of approvals and declines in recording order. */
-    public List<Authorization> decisions() {
-        return journal.entries().stream()
+    /** Returns approvals and declines in the given prefix, in recording order. */
+    public List<Authorization> decisions(long knownThroughSequence) {
+        return journal.entries(knownThroughSequence).stream()
                 .flatMap(entry -> entry.authorizations().stream())
                 .toList();
     }

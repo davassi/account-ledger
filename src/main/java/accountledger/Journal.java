@@ -5,6 +5,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
@@ -34,22 +35,28 @@ public final class Journal {
      * Booking days may move backwards; sequences always follow arrival order.
      */
     public Entry append(String eventId, int bookedDay, List<Posting> postings) {
-        return append(eventId, bookedDay, postings, List.of());
+        var data = new Request.Postings(postings);
+        return append(new Request(eventId, bookedDay, data),
+                () -> new Effects(data.postings(), List.of()));
     }
 
-    /** Records already-decided outcomes together with their postings. */
-    Entry append(String eventId, int bookedDay, List<Posting> postings, List<Authorization> authorizations) {
-        var entry = new Entry(lastSequence() + 1, eventId, bookedDay, postings, authorizations);
-
+    /**
+     * Returns a recorded outcome for an identical request, or rejects a conflicting
+     * ID. Only a new request evaluates the supplier, which must compute effects
+     * without modifying this journal. Failed computation or validation appends nothing.
+     */
+    Entry append(Request request, Supplier<Effects> decide) {
+        Objects.requireNonNull(request, "request");
+        Objects.requireNonNull(decide, "decide");
         for (final var existing : entries) {
-            if (existing.eventId().equals(eventId)) {
-                if (existing.bookedDay() != bookedDay || !existing.postings().equals(entry.postings())
-                        || !existing.authorizations().equals(entry.authorizations())) {
-                    throw new IllegalArgumentException("Conflicting event ID: " + eventId);
+            if (existing.eventId().equals(request.eventId())) {
+                if (!existing.request().equals(request)) {
+                    throw new IllegalArgumentException("Conflicting event ID: " + request.eventId());
                 }
                 return existing;
             }
         }
+        var entry = new Entry(lastSequence() + 1, request, decide.get());
         for (var posting : entry.postings()) {
             validateCurrency(posting.accountId(), posting.delta());
         }
@@ -73,12 +80,11 @@ public final class Journal {
      * @param knownThroughSequence latest entry to include, from zero to {@link #lastSequence()}
      */
     public Money balance(String accountId, int valueDay, long knownThroughSequence) {
-        if (valueDay < 1 || knownThroughSequence < 0 || knownThroughSequence > lastSequence()) {
-            throw new IllegalArgumentException("Invalid value day or knowledge cutoff");
+        if (valueDay < 1) {
+            throw new IllegalArgumentException("Value day must be positive");
         }
         var opening = openingBalance(accountId);
-        return entries.stream()
-                .filter(entry -> entry.sequence() <= knownThroughSequence)
+        return entries(knownThroughSequence).stream()
                 .flatMap(entry -> entry.postings().stream())
                 .filter(posting -> posting.accountId().equals(accountId) && posting.valueDay() <= valueDay)
                 .map(Posting::delta)
@@ -96,7 +102,15 @@ public final class Journal {
      * Returns an immutable snapshot. Later appends do not change the returned list.
      */
     public List<Entry> entries() {
-        return List.copyOf(entries);
+        return entries(lastSequence());
+    }
+
+    /** Returns an immutable prefix, including the cutoff entry; zero is empty. */
+    public List<Entry> entries(long knownThroughSequence) {
+        if (knownThroughSequence < 0 || knownThroughSequence > lastSequence()) {
+            throw new IllegalArgumentException("Invalid knowledge cutoff");
+        }
+        return List.copyOf(entries.subList(0, Math.toIntExact(knownThroughSequence)));
     }
 
     private void validateCurrency(String accountId, Money amount) {
@@ -114,25 +128,31 @@ public final class Journal {
     }
 
     /**
-     * Immutable record of one event's postings and decisions, all visible together
-     * at one sequence. E10 has three postings; E3 has a decision and no postings.
+     * Original request and its immutable effects, visible together at one sequence.
+     * Keeping the input allows retries to be recognized without recalculating outcomes.
      *
      * @param sequence journal-assigned position starting at one, independent of event IDs and dates
-     * @param eventId identity used to detect duplicate or conflicting submissions
-     * @param bookedDay positive booking day declared by the event
-     * @param postings ordered, defensively copied movements, each with its own value day
-     * @param authorizations ordered, defensively copied decisions made when processing the event
+     * @param request original event ID, booked day and input data
+     * @param effects postings and decisions calculated on the first submission
      */
-    public record Entry(long sequence, String eventId, int bookedDay, List<Posting> postings,
-                        List<Authorization> authorizations) {
+    public record Entry(long sequence, Request request, Effects effects) {
         public Entry {
-            Objects.requireNonNull(eventId, "eventId");
-            if (eventId.isBlank()) {
-                throw new IllegalArgumentException("Event ID must not be blank");
+            Objects.requireNonNull(request, "request");
+            Objects.requireNonNull(effects, "effects");
+            if (sequence < 1) {
+                throw new IllegalArgumentException("Sequence must be positive");
             }
-            if (sequence < 1 || bookedDay < 1) {
-                throw new IllegalArgumentException("Sequence and booked day must be positive");
-            }
+        }
+
+        public String eventId() { return request.eventId(); }
+        public int bookedDay() { return request.bookedDay(); }
+        public List<Posting> postings() { return effects.postings(); }
+        public List<Authorization> authorizations() { return effects.authorizations(); }
+    }
+
+    /** E10 produces three postings; E3 produces one decision and no postings. */
+    public record Effects(List<Posting> postings, List<Authorization> authorizations) {
+        public Effects {
             postings = List.copyOf(postings);
             authorizations = List.copyOf(authorizations);
         }
