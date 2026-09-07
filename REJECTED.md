@@ -4,14 +4,6 @@ This review checks the criteria against the brief, separately from the behavior
 of the current implementation. A test that confirms our chosen policy does not
 prove that the policy satisfies the requirement.
 
-**Audit correction:** the earlier refusal of criterion 4 was not justified.
-It is a valid requirement, and the settlement implementation now satisfies it.
-Criterion 6 also cannot be refused solely because the ledger is append-only:
-compensating credits can restore net fees without deleting their assessments.
-The adopted reversal scope compensates only the referenced entry, retaining
-separate fee assessments. We refuse criterion 6 as an automatic-restoration
-claim under that policy; automatic fee refunds are outside this implementation.
-
 ## Verdict on every criterion
 
 | # | Criterion | Verdict |

@@ -12,16 +12,6 @@ queryable after later events change the balances.
 The application runs locally with no web layer, database, persistence or runtime
 libraries beyond the JDK. Each execution starts with fresh state.
 
-> [!NOTE]
-> **Current status:** the ledger core, test suite and executable replay are
-> implemented. The command prints all six daily closes, including historical
-> states, fee assessments, errors and balances revised at the end of Day 6.
-
-**Acceptance audit:** criterion 4 is now implemented: an unknown authorization's
-settlement is rejected without a debit. For criterion 6, E9 compensates E7 only;
-the separately assessed fees remain. Automatic fee restoration is refused under
-that documented interpretation. See [REJECTED.md](REJECTED.md) for the reasoning.
-
 ## Quick start
 
 Requires **JDK 21** and **Maven**; verified with Maven 3.6.3. From the repository root:
