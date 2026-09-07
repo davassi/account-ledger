@@ -18,6 +18,9 @@ public record Money(CurrencyUnit currency, BigDecimal amount) {
         return new Money(currency, new BigDecimal(amount));
     }
 
+    /**
+     * Adds an amount in the same currency, without rounding.
+     */
     public Money add(Money other) {
         if (currency != other.currency) {
             throw new IllegalArgumentException("Currency mismatch: " + currency + " and " + other.currency);
@@ -46,15 +49,20 @@ public record Money(CurrencyUnit currency, BigDecimal amount) {
         return new Money(currency, amount.multiply(factor).setScale(currency.scale(), roundingMode));
     }
 
+    /**
+     * Splits whole minor units, giving one extra signed unit to the first parts
+     * until the remainder is exhausted. The parts always sum to this amount.
+     */
     public List<Money> split(int parts) {
         if (parts <= 0) {
             throw new IllegalArgumentException("Parts must be positive");
         }
         var division = amount.unscaledValue().divideAndRemainder(BigInteger.valueOf(parts));
-        int remainder = division[1].abs().intValueExact();
-        var adjustment = BigInteger.valueOf(amount.signum());
+        var unitsPerPart = division[0];
+        int partsWithExtraUnit = division[1].abs().intValueExact();
+        var extraUnit = BigInteger.valueOf(signum());
         return IntStream.range(0, parts)
-                .mapToObj(i -> division[0].add(i < remainder ? adjustment : BigInteger.ZERO))
+                .mapToObj(i -> i < partsWithExtraUnit ? unitsPerPart.add(extraUnit) : unitsPerPart)
                 .map(units -> new Money(currency, new BigDecimal(units, currency.scale())))
                 .toList();
     }

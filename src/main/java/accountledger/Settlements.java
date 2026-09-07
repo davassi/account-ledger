@@ -28,27 +28,31 @@ public final class Settlements {
      */
     public Journal.Entry settle(String eventId, int bookedDay, String accountId, String authorizationId,
                                 Money amount, int valueDay) {
-        var request = new Request(eventId, bookedDay, new Request.Settlement(accountId, authorizationId, amount, valueDay));
+        var data = new Request.Settlement(accountId, authorizationId, amount, valueDay);
+        var request = new Request(eventId, bookedDay, data);
         return journal.append(request, () -> {
             Objects.requireNonNull(authorizationId, "authorizationId");
             Objects.requireNonNull(amount, "amount");
             if (authorizationId.isBlank() || amount.signum() <= 0) {
                 throw new IllegalArgumentException("Settlement requires an authorization ID and a positive amount");
             }
-            var posting = new Posting(accountId, valueDay, amount.negate());
+            var postings = List.of(new Posting(accountId, valueDay, amount.negate()));
             long cutoff = journal.lastSequence();
             if (authorizations.wasSettled(accountId, authorizationId, cutoff)) {
                 throw new IllegalArgumentException("Authorization reference already settled: " + authorizationId);
             }
+
             var original = authorizations.find(accountId, authorizationId, cutoff);
             if (original.isEmpty()) {
-                return new Journal.Effects(List.of(posting), List.of(), List.of(MISSING_AUTHORIZATION));
+                return new Journal.Effects(postings, List.of(), List.of(MISSING_AUTHORIZATION));
             }
-            if (original.get().status() == DECLINED) {
-                return new Journal.Effects(List.of(posting), List.of(), List.of(DECLINED_AUTHORIZATION));
+            var hold = original.get();
+            if (hold.status() == DECLINED) {
+                return new Journal.Effects(postings, List.of(), List.of(DECLINED_AUTHORIZATION));
             }
-            var settled = new Authorization(accountId, authorizationId, original.get().amount(), SETTLED);
-            return new Journal.Effects(List.of(posting), List.of(settled));
+
+            var settled = new Authorization(accountId, authorizationId, hold.amount(), SETTLED);
+            return new Journal.Effects(postings, List.of(settled));
         });
     }
 }

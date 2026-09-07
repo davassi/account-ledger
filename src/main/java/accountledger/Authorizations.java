@@ -4,7 +4,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 import static accountledger.Authorization.Status.APPROVED;
 import static accountledger.Authorization.Status.DECLINED;
@@ -50,12 +49,11 @@ public final class Authorizations {
      */
     public Money available(String accountId, int valueDay, long knownThroughSequence) {
         var balance = journal.balance(accountId, valueDay, knownThroughSequence);
-        return states(knownThroughSequence).stream()
+        var heldAmount = states(knownThroughSequence).stream()
                 .filter(auth -> auth.accountId().equals(accountId) && auth.status() == APPROVED)
                 .map(Authorization::amount)
-                .reduce(Money::add)
-                .map(balance::subtract)
-                .orElse(balance);
+                .reduce(Money.of(balance.currency(), "0"), Money::add);
+        return balance.subtract(heldAmount);
     }
 
     /** Returns all recorded authorization states, including settlement, in recording order. */
@@ -67,9 +65,9 @@ public final class Authorizations {
 
     /** Returns the latest state per account and authorization ID, in first-seen order. */
     public List<Authorization> states(long knownThroughSequence) {
-        var latest = decisions(knownThroughSequence).stream()
-                .collect(Collectors.toMap(auth -> new Key(auth.accountId(), auth.id()),
-                        auth -> auth, (earlier, later) -> later, LinkedHashMap::new));
+        var latest = new LinkedHashMap<Key, Authorization>();
+        decisions(knownThroughSequence).forEach(auth ->
+                latest.put(new Key(auth.accountId(), auth.id()), auth));
         return List.copyOf(latest.values());
     }
 

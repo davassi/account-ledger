@@ -48,7 +48,9 @@ public final class Journal {
     Entry append(Request request, Supplier<Effects> decide) {
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(decide, "decide");
-        var duplicate = entries.stream().filter(entry -> entry.eventId().equals(request.eventId())).findFirst();
+        var duplicate = entries.stream()
+                .filter(entry -> entry.eventId().equals(request.eventId()))
+                .findFirst();
         if (duplicate.isPresent()) {
             var existing = duplicate.get();
             if (!existing.request().equals(request)) {
@@ -56,6 +58,7 @@ public final class Journal {
             }
             return existing;
         }
+
         var entry = new Entry(lastSequence() + 1, request, decide.get());
         entry.postings().forEach(posting -> validateCurrency(posting.accountId(), posting.delta()));
         entry.authorizations().forEach(auth -> validateCurrency(auth.accountId(), auth.amount()));
@@ -80,11 +83,12 @@ public final class Journal {
             throw new IllegalArgumentException("Value day must be positive");
         }
         var opening = openingBalance(accountId);
-        return entries(knownThroughSequence).stream()
+        var postedAmount = entries(knownThroughSequence).stream()
                 .flatMap(entry -> entry.postings().stream())
                 .filter(posting -> posting.accountId().equals(accountId) && posting.valueDay() <= valueDay)
                 .map(Posting::delta)
-                .reduce(opening, Money::add);
+                .reduce(Money.of(opening.currency(), "0"), Money::add);
+        return opening.add(postedAmount);
     }
 
     /**
