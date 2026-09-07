@@ -7,10 +7,10 @@ public record Posting(String accountId, int valueDay, Money delta) {
         Objects.requireNonNull(accountId, "accountId");
         Objects.requireNonNull(delta, "delta");
         if (accountId.isBlank()) {
-            throw new IllegalArgumentException("Account ID must not be blank");
+            throw new RequestRejectedException("Account ID must not be blank");
         }
         if (valueDay < 1) {
-            throw new IllegalArgumentException("Value day must be positive");
+            throw new RequestRejectedException("Value day must be positive");
         }
     }
 }

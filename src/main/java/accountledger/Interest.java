@@ -27,8 +27,16 @@ public final class Interest {
 
     /** Credits exactly the rounded daily sum, once, after Day 6 has been closed. */
     public Journal.Entry capitalize(String eventId, String accountId) {
-        var request = new Request(eventId, FINAL_DAY, new Request.InterestCapitalization(accountId));
+        return capitalize(eventId, FINAL_DAY, accountId);
+    }
+
+    /** Preserves the submitted booked day when called through Replay. */
+    Journal.Entry capitalize(String eventId, int bookedDay, String accountId) {
+        var request = new Request(eventId, bookedDay, new Request.InterestCapitalization(accountId));
         return journal.append(request, () -> {
+            if (bookedDay != FINAL_DAY) {
+                throw new RequestRejectedException("Capitalize on Day 6");
+            }
             var daily = accrualsToCapitalize(accountId, journal.lastSequence());
             var total = daily.stream().map(Accrual::amount)
                     .reduce(Money.of(daily.getFirst().amount().currency(), "0"), Money::add);
@@ -40,7 +48,7 @@ public final class Interest {
     List<Accrual> calculate(String accountId, int throughDay, long cutoff, List<Posting> pendingFees) {
         requireUncapitalized(accountId, cutoff);
         if (throughDay < 1 || throughDay > FINAL_DAY) {
-            throw new IllegalArgumentException("Interest supports Day 1 through Day 6");
+            throw new RequestRejectedException("Interest supports Day 1 through Day 6");
         }
         return IntStream.rangeClosed(1, throughDay).mapToObj(day -> {
             var balance = journal.balance(accountId, day, cutoff);
@@ -56,16 +64,16 @@ public final class Interest {
     private List<Accrual> accrualsToCapitalize(String accountId, long cutoff) {
         requireUncapitalized(accountId, cutoff);
         var latest = latestAccrualEntry(accountId, cutoff)
-                .orElseThrow(() -> new IllegalArgumentException("Close all six days before capitalization"));
+                .orElseThrow(() -> new RequestRejectedException("Close all six days before capitalization"));
         if (latest.accruals().size() != FINAL_DAY) {
-            throw new IllegalArgumentException("Close all six days before capitalization");
+            throw new RequestRejectedException("Close all six days before capitalization");
         }
         boolean changedSinceClose = journal.entries(cutoff).stream()
                 .filter(entry -> entry.sequence() > latest.sequence())
                 .flatMap(entry -> entry.postings().stream())
                 .anyMatch(posting -> posting.accountId().equals(accountId) && posting.valueDay() <= FINAL_DAY);
         if (changedSinceClose) {
-            throw new IllegalArgumentException("Reassess changed balances before capitalization");
+            throw new RequestRejectedException("Reassess changed balances before capitalization");
         }
         return latest.accruals();
     }
@@ -82,7 +90,7 @@ public final class Interest {
                 .anyMatch(entry -> entry.request().data() instanceof Request.InterestCapitalization capitalization
                         && capitalization.accountId().equals(accountId));
         if (capitalized) {
-            throw new IllegalArgumentException("Interest has already been capitalized for account: " + accountId);
+            throw new RequestRejectedException("Interest has already been capitalized for account: " + accountId);
         }
     }
 }

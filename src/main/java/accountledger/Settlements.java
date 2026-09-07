@@ -51,11 +51,11 @@ public final class Settlements {
         var authorizationId = Objects.requireNonNull(settlement.authorizationId(), "authorizationId");
         var amount = Objects.requireNonNull(settlement.amount(), "amount");
         if (authorizationId.isBlank() || amount.signum() <= 0) {
-            throw new IllegalArgumentException("Settlement requires an authorization ID and a positive amount");
+            throw new RequestRejectedException("Settlement requires an authorization ID and a positive amount");
         }
         var debit = new Posting(settlement.accountId(), settlement.valueDay(), amount.negate());
         if (authorizations.wasSettled(settlement.accountId(), authorizationId, cutoff)) {
-            throw new IllegalArgumentException("Authorization reference already settled: " + authorizationId);
+            throw new RequestRejectedException("Authorization reference already settled: " + authorizationId);
         }
         return debit;
     }

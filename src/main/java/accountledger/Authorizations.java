@@ -85,8 +85,9 @@ public final class Authorizations {
         var accountId = hold.accountId();
         var authorizationId = hold.authorizationId();
         if (find(accountId, authorizationId, cutoff).isPresent() || wasSettled(accountId, authorizationId, cutoff)) {
-            throw new IllegalArgumentException("Authorization ID already used for account: " + authorizationId);
+            throw new RequestRejectedException("Authorization ID already used for account: " + authorizationId);
         }
+        journal.validateCurrency(accountId, hold.amount());
         var remaining = available(accountId, day, cutoff).subtract(hold.amount());
         var status = remaining.signum() >= 0 ? APPROVED : DECLINED;
         return new Authorization(accountId, authorizationId, hold.amount(), status);

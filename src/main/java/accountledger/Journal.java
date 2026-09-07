@@ -53,7 +53,7 @@ public final class Journal {
         if (duplicate.isPresent()) {
             var existing = duplicate.get();
             if (!existing.request().equals(request)) {
-                throw new IllegalArgumentException("Conflicting event ID: " + request.eventId());
+                throw new RequestRejectedException("Conflicting event ID: " + request.eventId());
             }
             return existing;
         }
@@ -120,16 +120,16 @@ public final class Journal {
                 .findFirst();
     }
 
-    private void validateCurrency(String accountId, Money amount) {
+    void validateCurrency(String accountId, Money amount) {
         if (openingBalance(accountId).currency() != amount.currency()) {
-            throw new IllegalArgumentException("Currency mismatch for account: " + accountId);
+            throw new RequestRejectedException("Currency mismatch for account: " + accountId);
         }
     }
 
     private Money openingBalance(String accountId) {
         var opening = openingBalances.get(accountId);
         if (opening == null) {
-            throw new IllegalArgumentException("Unknown account: " + accountId);
+            throw new RequestRejectedException("Unknown account: " + accountId);
         }
         return opening;
     }

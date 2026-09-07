@@ -23,7 +23,7 @@ public final class DailyClosing {
         return journal.append(request, () -> {
             long cutoff = journal.lastSequence();
             if (day != lastClosedDay(accountId, cutoff) + 1) {
-                throw new IllegalArgumentException("Close days in order, starting at Day 1");
+                throw new RequestRejectedException("Close days in order, starting at Day 1");
             }
             return closingEffects(accountId, day, cutoff);
         });
@@ -36,7 +36,7 @@ public final class DailyClosing {
             long cutoff = journal.lastSequence();
             int throughDay = lastClosedDay(accountId, cutoff);
             if (throughDay == 0 || processingDay < throughDay) {
-                throw new IllegalArgumentException("Reassessment requires closed days at or before the processing day");
+                throw new RequestRejectedException("Reassessment requires closed days at or before the processing day");
             }
             return closingEffects(accountId, throughDay, cutoff);
         });
@@ -81,7 +81,7 @@ public final class DailyClosing {
                 return;
             }
             if (balance.currency() != OVERDRAFT_FEE.currency()) {
-                throw new IllegalArgumentException("No overdraft fee defined for currency: " + balance.currency());
+                throw new RequestRejectedException("No overdraft fee defined for currency: " + balance.currency());
             }
             newFees.add(new Posting(accountId, day, OVERDRAFT_FEE.negate()));
         });

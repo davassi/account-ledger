@@ -15,10 +15,10 @@ public record Authorization(String accountId, String id, Money amount, Status st
         Objects.requireNonNull(amount, "amount");
         Objects.requireNonNull(status, "status");
         if (accountId.isBlank() || id.isBlank()) {
-            throw new IllegalArgumentException("Account and authorization IDs must not be blank");
+            throw new RequestRejectedException("Account and authorization IDs must not be blank");
         }
         if (amount.signum() <= 0) {
-            throw new IllegalArgumentException("Authorization amount must be positive");
+            throw new RequestRejectedException("Authorization amount must be positive");
         }
     }
 }

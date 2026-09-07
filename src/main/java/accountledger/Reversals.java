@@ -30,12 +30,12 @@ public final class Reversals {
 
     private Journal.Entry findReversibleEvent(String accountId, String originalEventId, long cutoff) {
         var original = journal.find(originalEventId, cutoff)
-                .orElseThrow(() -> new IllegalArgumentException("Unknown original event: " + originalEventId));
+                .orElseThrow(() -> new RequestRejectedException("Unknown original event: " + originalEventId));
         if (original.postings().isEmpty() || original.request().data() instanceof Request.Reversal) {
-            throw new IllegalArgumentException("Only original monetary events can be reversed");
+            throw new RequestRejectedException("Only original monetary events can be reversed");
         }
         if (original.postings().stream().anyMatch(posting -> !posting.accountId().equals(accountId))) {
-            throw new IllegalArgumentException("All original postings must belong to account: " + accountId);
+            throw new RequestRejectedException("All original postings must belong to account: " + accountId);
         }
 
         boolean alreadyReversed = journal.entries(cutoff).stream()
@@ -43,7 +43,7 @@ public final class Reversals {
                 .anyMatch(input -> input instanceof Request.Reversal reversal
                         && reversal.originalEventId().equals(originalEventId));
         if (alreadyReversed) {
-            throw new IllegalArgumentException("Event already reversed: " + originalEventId);
+            throw new RequestRejectedException("Event already reversed: " + originalEventId);
         }
         return original;
     }
