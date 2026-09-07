@@ -2,6 +2,10 @@ package accountledger;
 
 import java.util.ArrayList;
 import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -12,9 +16,6 @@ import static accountledger.Authorization.Status.APPROVED;
 import static accountledger.Authorization.Status.DECLINED;
 import static accountledger.CurrencyUnit.AED;
 import static accountledger.CurrencyUnit.BHD;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class AuthorizationsTest {
     private final Journal journal = new Journal(
@@ -23,6 +24,7 @@ class AuthorizationsTest {
     private final Authorizations authorizations = new Authorizations(journal);
 
     @BeforeEach
+    @SuppressWarnings("unused")
     void fundAccount() {
         journal.append("E1", 1, List.of(aed(1, "1200.00")));
         journal.append("E2", 1, List.of(aed(1, "-950.00")));
@@ -239,11 +241,11 @@ class AuthorizationsTest {
 
     @Test
     void everyHistoricalReadRejectsAnInvalidCutoff() {
-        for (long invalid : List.of(-1L, journal.lastSequence() + 1)) {
+        List.of(-1L, journal.lastSequence() + 1).forEach(invalid -> {
             assertThrows(IllegalArgumentException.class, () -> authorizations.available("ACC-001", 2, invalid));
             assertThrows(IllegalArgumentException.class, () -> authorizations.decisions(invalid));
             assertThrows(IllegalArgumentException.class, () -> journal.entries(invalid));
-        }
+        });
     }
 
     private Posting aed(int day, String amount) {

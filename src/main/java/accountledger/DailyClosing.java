@@ -12,12 +12,17 @@ public final class DailyClosing {
     private final Journal journal;
     private final Interest interest;
 
+    /** 
+     * Creates a DailyClosing instance with the specified Journal.
+     */
     public DailyClosing(Journal journal) {
         this.journal = Objects.requireNonNull(journal, "journal");
         this.interest = new Interest(journal);
     }
 
-    /** Closes the next day for this account; the returned sequence includes its fees. */
+    /** 
+     * Closes the next day for this account; the returned sequence includes its fees. 
+     */
     public Journal.Entry close(String eventId, int day, String accountId) {
         var request = new Request(eventId, day, new Request.DayClose(accountId));
         return journal.append(request, () -> {

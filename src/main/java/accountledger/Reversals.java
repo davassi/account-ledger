@@ -19,6 +19,7 @@ public final class Reversals {
     public Journal.Entry reverse(String eventId, int bookedDay, String accountId, String originalEventId, int valueDay) {
         var data = new Request.Reversal(accountId, originalEventId, valueDay);
         var request = new Request(eventId, bookedDay, data);
+
         return journal.append(request, () -> {
             var original = findReversibleEvent(accountId, originalEventId, journal.lastSequence());
             var compensations = original.postings().stream()

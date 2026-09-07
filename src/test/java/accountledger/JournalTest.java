@@ -12,6 +12,7 @@ import static accountledger.CurrencyUnit.BHD;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+@SuppressWarnings("ThrowableResultIgnored") // NetBeans: assertThrows returns the Throwable by design
 class JournalTest {
     private final Journal journal = new Journal(
             new Account("ACC-001", Money.of(AED, "0.00")),

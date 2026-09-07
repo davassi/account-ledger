@@ -3,6 +3,10 @@ package accountledger;
 import java.util.Objects;
 
 public record Posting(String accountId, int valueDay, Money delta) {
+
+    /**
+     * Constructs a Posting instance with the specified account ID, value day, and delta.
+     */
     public Posting {
         Objects.requireNonNull(accountId, "accountId");
         Objects.requireNonNull(delta, "delta");

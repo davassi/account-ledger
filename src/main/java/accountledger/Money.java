@@ -7,13 +7,28 @@ import java.util.List;
 import java.util.Objects;
 import java.util.stream.IntStream;
 
+/**
+ * Represents a monetary amount in a specific currency.
+ */
 public record Money(CurrencyUnit currency, BigDecimal amount) {
+
+    /**
+     * Constructs a Money instance with the specified currency and amount.
+     *
+     * @param currency the currency unit
+     * @param amount   the monetary amount
+     * @throws NullPointerException if currency or amount is null
+     * @throws ArithmeticException  if the amount cannot be represented in the specified currency's scale
+     */
     public Money {
         Objects.requireNonNull(currency, "currency");
         Objects.requireNonNull(amount, "amount");
         amount = amount.setScale(currency.scale(), RoundingMode.UNNECESSARY);
     }
 
+    /**
+     * Creates a Money instance from a string representation of the amount.
+     */
     public static Money of(CurrencyUnit currency, String amount) {
         return new Money(currency, new BigDecimal(amount));
     }
@@ -21,17 +36,23 @@ public record Money(CurrencyUnit currency, BigDecimal amount) {
     /**
      * Adds an amount in the same currency, without rounding.
      */
-    public Money add(Money other) {
+    public Money add(final Money other) {
         if (currency != other.currency) {
             throw new IllegalArgumentException("Currency mismatch: " + currency + " and " + other.currency);
         }
         return new Money(currency, amount.add(other.amount));
     }
 
-    public Money subtract(Money other) {
+    /**
+     * Subtracts another Money instance from this one, returning a new Money instance with the result.
+     */
+    public Money subtract(final Money other) {
         return add(other.negate());
     }
 
+    /**
+     * Negates the monetary amount, returning a new Money instance with the negated value.
+     */
     public Money negate() {
         return new Money(currency, amount.negate());
     }

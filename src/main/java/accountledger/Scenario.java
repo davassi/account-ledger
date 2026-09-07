@@ -8,10 +8,13 @@ import static accountledger.CurrencyUnit.BHD;
 
 /** The required six-day scenario, in arrival order, with explicit closing operations. */
 public final class Scenario {
+
     private static final List<String> ACCOUNTS = List.of("ACC-001", "ACC-002");
+
     private final Journal journal = new Journal(
             new Account("ACC-001", Money.of(AED, "0.00")),
             new Account("ACC-002", Money.of(BHD, "0.000")));
+
     private final Replay replay = new Replay(journal);
 
     public static void main(String[] args) {
@@ -20,6 +23,7 @@ public final class Scenario {
         scenario.printSummary();
     }
 
+    /** Runs the scenario with the specified requests and closing operations. */
     void run() {
         process(1,
                 new Request("E1", 1, aed(1, "1200.00")),

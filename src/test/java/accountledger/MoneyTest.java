@@ -8,6 +8,7 @@ import static accountledger.CurrencyUnit.BHD;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+@SuppressWarnings("ThrowableResultIgnored") // NetBeans: assertThrows returns the Throwable by design
 class MoneyTest {
     @Test
     void normalizesAmountsToTheirCurrencyScale() {

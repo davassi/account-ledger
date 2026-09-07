@@ -1,6 +1,9 @@
 package accountledger;
 
 import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -8,10 +11,11 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import static accountledger.CurrencyUnit.AED;
 import static accountledger.CurrencyUnit.BHD;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
+
+@SuppressWarnings("ThrowableResultIgnored") // NetBeans: assertThrows returns the Throwable by design
 class MoneySplitTest {
+    
     @ParameterizedTest
     @CsvSource({
             "BHD, 10.000, 3.334, 3.333, 3.333",
@@ -35,17 +39,15 @@ class MoneySplitTest {
     @Test
     void onePartPreservesTheWholeAmount() {
         var amount = Money.of(BHD, "10.000");
-
         assertEquals(List.of(amount), amount.split(1));
     }
 
     @Test
     void splitsIntoTwoEqualPartsWhenThereIsNoRemainder() {
         var half = Money.of(BHD, "5.000");
-
         assertEquals(List.of(half, half), Money.of(BHD, "10.000").split(2));
     }
-
+    
     @ParameterizedTest
     @ValueSource(ints = {0, -1})
     void rejectsNonPositiveCounts(int parts) {

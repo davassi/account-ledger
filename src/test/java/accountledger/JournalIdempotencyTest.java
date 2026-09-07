@@ -37,10 +37,8 @@ class JournalIdempotencyTest {
                 new Request("E1", 1, new Request.Postings(List.of())),
                 new Request("E1", 1, new Request.Hold("ACC-001", "A", credit.delta())));
 
-        for (var request : conflicts) {
-            assertThrows(IllegalArgumentException.class,
-                    () -> journal.append(request, () -> fail("A conflicting ID must never calculate effects")));
-        }
+        conflicts.forEach(request -> assertThrows(IllegalArgumentException.class,
+                () -> journal.append(request, () -> fail("A conflicting ID must never calculate effects"))));
         assertEquals(List.of(original), journal.entries());
     }
 
