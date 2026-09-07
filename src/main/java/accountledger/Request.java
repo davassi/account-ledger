@@ -18,8 +18,8 @@ public record Request(String eventId, int bookedDay, Data data) {
         }
     }
 
-    /** The record type also distinguishes monetary input from a hold request. */
-    public sealed interface Data permits Postings, Hold {}
+    /** The record type distinguishes the operation as well as its input fields. */
+    public sealed interface Data permits Postings, Hold, Settlement {}
 
     public record Postings(List<Posting> postings) implements Data {
         public Postings {
@@ -29,4 +29,7 @@ public record Request(String eventId, int bookedDay, Data data) {
 
     /** Hold input; the authorization operation validates it before recording an outcome. */
     public record Hold(String accountId, String authorizationId, Money amount) implements Data {}
+
+    /** The monetary value day is independent of the request's booked day. */
+    public record Settlement(String accountId, String authorizationId, Money amount, int valueDay) implements Data {}
 }

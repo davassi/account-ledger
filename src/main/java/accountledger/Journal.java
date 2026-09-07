@@ -9,7 +9,7 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
- * In-memory, append-only history of postings and authorization decisions,
+ * In-memory, append-only history of postings, authorization states and diagnostics,
  * grouped by event, for a fixed set of accounts.
  * Entries and exposed snapshots are immutable. Designed for single-threaded replay.
  */
@@ -48,21 +48,17 @@ public final class Journal {
     Entry append(Request request, Supplier<Effects> decide) {
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(decide, "decide");
-        for (final var existing : entries) {
-            if (existing.eventId().equals(request.eventId())) {
-                if (!existing.request().equals(request)) {
-                    throw new IllegalArgumentException("Conflicting event ID: " + request.eventId());
-                }
-                return existing;
+        var duplicate = entries.stream().filter(entry -> entry.eventId().equals(request.eventId())).findFirst();
+        if (duplicate.isPresent()) {
+            var existing = duplicate.get();
+            if (!existing.request().equals(request)) {
+                throw new IllegalArgumentException("Conflicting event ID: " + request.eventId());
             }
+            return existing;
         }
         var entry = new Entry(lastSequence() + 1, request, decide.get());
-        for (var posting : entry.postings()) {
-            validateCurrency(posting.accountId(), posting.delta());
-        }
-        for (var authorization : entry.authorizations()) {
-            validateCurrency(authorization.accountId(), authorization.amount());
-        }
+        entry.postings().forEach(posting -> validateCurrency(posting.accountId(), posting.delta()));
+        entry.authorizations().forEach(auth -> validateCurrency(auth.accountId(), auth.amount()));
         entries.add(entry);
         return entry;
     }
@@ -148,13 +144,19 @@ public final class Journal {
         public int bookedDay() { return request.bookedDay(); }
         public List<Posting> postings() { return effects.postings(); }
         public List<Authorization> authorizations() { return effects.authorizations(); }
+        public List<Diagnostic> diagnostics() { return effects.diagnostics(); }
     }
 
-    /** E10 produces three postings; E3 produces one decision and no postings. */
-    public record Effects(List<Posting> postings, List<Authorization> authorizations) {
+    /** Postings, state changes and anomalies become visible together in a single entry. */
+    public record Effects(List<Posting> postings, List<Authorization> authorizations, List<Diagnostic> diagnostics) {
+        public Effects(List<Posting> postings, List<Authorization> authorizations) {
+            this(postings, authorizations, List.of());
+        }
+
         public Effects {
             postings = List.copyOf(postings);
             authorizations = List.copyOf(authorizations);
+            diagnostics = List.copyOf(diagnostics);
         }
     }
 }

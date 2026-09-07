@@ -3,11 +3,11 @@ package accountledger;
 import java.util.Objects;
 
 /**
- * An immutable approval or decline. The requested amount becomes an active hold
- * only when approved; neither outcome is a monetary posting.
+ * An immutable authorization state. The amount is the original requested hold,
+ * including in a SETTLED record. Only the latest APPROVED state reserves funds.
  */
 public record Authorization(String accountId, String id, Money amount, Status status) {
-    public enum Status { APPROVED, DECLINED }
+    public enum Status { APPROVED, DECLINED, SETTLED }
 
     public Authorization {
         Objects.requireNonNull(accountId, "accountId");

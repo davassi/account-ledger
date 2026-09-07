@@ -1,7 +1,10 @@
 package accountledger;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
 import static accountledger.Authorization.Status.APPROVED;
 import static accountledger.Authorization.Status.DECLINED;
@@ -28,7 +31,7 @@ public final class Authorizations {
         var request = new Request(eventId, day, new Request.Hold(accountId, authorizationId, amount));
         var entry = journal.append(request, () -> {
             long cutoff = journal.lastSequence();
-            if (decisions(cutoff).stream().anyMatch(auth -> auth.accountId().equals(accountId) && auth.id().equals(authorizationId))) {
+            if (find(accountId, authorizationId, cutoff).isPresent() || wasSettled(accountId, authorizationId, cutoff)) {
                 throw new IllegalArgumentException("Authorization ID already used for account: " + authorizationId);
             }
             var remaining = available(accountId, day, cutoff).subtract(amount);
@@ -47,18 +50,43 @@ public final class Authorizations {
      */
     public Money available(String accountId, int valueDay, long knownThroughSequence) {
         var balance = journal.balance(accountId, valueDay, knownThroughSequence);
-        for (var auth : decisions(knownThroughSequence)) {
-            if (auth.accountId().equals(accountId) && auth.status() == APPROVED) {
-                balance = balance.subtract(auth.amount());
-            }
-        }
-        return balance;
+        return states(knownThroughSequence).stream()
+                .filter(auth -> auth.accountId().equals(accountId) && auth.status() == APPROVED)
+                .map(Authorization::amount)
+                .reduce(Money::add)
+                .map(balance::subtract)
+                .orElse(balance);
     }
 
-    /** Returns approvals and declines in the given prefix, in recording order. */
+    /** Returns all recorded authorization states, including settlement, in recording order. */
     public List<Authorization> decisions(long knownThroughSequence) {
         return journal.entries(knownThroughSequence).stream()
                 .flatMap(entry -> entry.authorizations().stream())
                 .toList();
     }
+
+    /** Returns the latest state per account and authorization ID, in first-seen order. */
+    public List<Authorization> states(long knownThroughSequence) {
+        var latest = decisions(knownThroughSequence).stream()
+                .collect(Collectors.toMap(auth -> new Key(auth.accountId(), auth.id()),
+                        auth -> auth, (earlier, later) -> later, LinkedHashMap::new));
+        return List.copyOf(latest.values());
+    }
+
+    Optional<Authorization> find(String accountId, String authorizationId, long cutoff) {
+        return states(cutoff).stream()
+                .filter(auth -> auth.accountId().equals(accountId) && auth.id().equals(authorizationId))
+                .findFirst();
+    }
+
+    /** Also recognizes settled references for which no authorization was ever recorded. */
+    boolean wasSettled(String accountId, String authorizationId, long cutoff) {
+        return journal.entries(cutoff).stream()
+                .map(entry -> entry.request().data())
+                .anyMatch(data -> data instanceof Request.Settlement settlement
+                        && settlement.accountId().equals(accountId)
+                        && settlement.authorizationId().equals(authorizationId));
+    }
+
+    private record Key(String accountId, String authorizationId) {}
 }
