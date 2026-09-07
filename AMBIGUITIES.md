@@ -1,10 +1,11 @@
 # Ambiguities and decisions
 
 Acceptance review correction: criterion 4 is a valid settlement requirement.
-The implementation now rejects E6 without a debit. Criterion 6 can describe
-net fee restoration via append-only credits, so fee retention is not forced
-by the journal model. Its refund interpretation remains open; the current
-code retains assessed fees. See [REJECTED.md](REJECTED.md) for the complete audit.
+The implementation rejects E6 without a debit. For criterion 6, the adopted
+scope reverses E7's principal only and retains separate fee assessments.
+Append-only would allow explicit refunds, but does not require them. Automatic
+fee restoration is refused under this interpretation; it is not pending work.
+See [REJECTED.md](REJECTED.md) for the complete audit.
 
 ## Applied in the Money component
 
@@ -103,7 +104,7 @@ code retains assessed fees. See [REJECTED.md](REJECTED.md) for the complete audi
 | Once-per-day rule | Read assessed value days from the fee postings in close and reassessment entries. An explicit refund leaves the original assessment present, so that day cannot be charged twice. |
 | Atomic fee calculation | Calculate all new fees and the resulting accruals locally, then append them with the close or reassessment marker in one immutable entry. A failed calculation records no partial fees or accruals and consumes no event ID. |
 | Date and amount of historical fees | Debit AED 25.00 per negative value day, booked on the processing day when discovered. The Day 2 fee leaves Day 3 at positive AED 5.00 after E7, so no Day 3 fee is due. |
-| Fees after a reversal | Current behavior retains fees already assessed; E9 compensates E7 only. Audit finding: criterion 6 can require restoration of net fees through new credits. Such refunds respect append-only. The policy must explicitly resolve net economic restoration versus preserving historical assessment facts before claiming compliance. |
+| Fees after a reversal | Retain already assessed fees. E9 compensates E7's principal only; it does not imply refunds of separate entries. Refuse criterion 6 as an automatic-restoration claim under this scope. Explicit refunds would be compatible with append-only, but the brief supplies no automatic fee-refund policy and this implementation does not introduce one. |
 | Snapshot and fee queries | Use the saved close sequence to reconstruct the original balance and authorization states. fees(accountId, cutoff) returns an immutable list of original fee postings for that account, excluding later compensating credits. |
 | Repeated close or reassessment | Identical requests return the original entry without recalculating. A new request may reassess a closed day, but may not close it again. Changed account, day or request type conflicts with a reused event ID. |
 | BHD overdraft fee | Unspecified. A negative BHD assessment fails atomically; zero and positive BHD balances close normally. This component deliberately has no invented BHD rate or currency conversion. |
@@ -146,18 +147,24 @@ code retains assessed fees. See [REJECTED.md](REJECTED.md) for the complete audi
 
 | Ambiguity | Decision |
 | --- | --- |
-| Scenario representation | Keep the ten typed input requests in Scenario.run, grouped by actual processing day. Keep the close, reassessment and capitalization calls explicit beside the events. No sorting by booked day or generic scheduling rules are introduced. |
+| Scenario representation | Keep the ten typed input requests in Scenario.run, grouped by actual processing day, with explicit backdated reassessments. endDay closes both accounts, capitalizes after the Day 6 closes and captures the report boundary. Do not sort by booked day. |
 | E10 and the day boundary | E10 is processed on Day 6 after E9, with booked and value Day 5. Reassess ACC-002 on Day 6 before closing that day and capitalizing. |
 | Close and capitalization IDs | Generate CLOSE-account-day and INTEREST-account. Retain E7-FEES, E9-FEES and E10-FEES for reassessments. These derived IDs are distinct from E1–E10 and stable across runs. |
 | Executable state | Each invocation creates the two accounts, a new Journal and one Replay. Component instances used for dispatch read the same journal; rejected attempts remain in that run's Replay. |
-| Output in this increment | Print final ledger balances after capitalization, latest authorization states, accepted diagnostics and rejected attempts. Preserve currency precision through Money's decimal representation. A per-day report remains separate work. |
-| Rejections while driving the scenario | Replay records expected failures and continues; Scenario prints their processing day, event ID and reason at the end. E6 is the sole rejected attempt. Auth-B's decline is an accepted decision. The suite verifies numerical results and ordering. |
+| Daily output | Print both accounts for every day: original closing ledger and available balances, revised closing balance, newly assessed fees with their value days, original authorization states, errors and accepted diagnostics. Preserve currency precision. |
+| Rejections while driving the scenario | Replay records expected failures and continues. The report displays each failed attempt once, on the day it was received, with its event ID and reason. E6 is the sole rejection; Auth-B's decline is an accepted decision. |
 | Runnable command | run.sh changes to the project directory, compiles with Maven offline and invokes the Java main class. No new build plugin or runtime dependency is required. Prime the dependency cache with mvn test when needed. |
 | One complete scenario definition | Move the complete input sequence out of DailyClosingTest into Scenario. The test now uses recorded event and close cutoffs from that same executable scenario, retaining its assertions without duplicating the stream. |
 
-## Working decisions for the later components
+## Applied in daily reporting
 
 | Ambiguity | Decision |
 | --- | --- |
-| Historical report | Distinguish original closes from revisions, stating the journal cutoff and saving the rejection snapshot. Include the separate capitalization entry in the final Day 6 snapshot. |
-| Insufficient availability | The check applies to authorizations. Charges and settlements may drive the balance negative. |
+| Saved daily boundary | Capture one immutable journal cutoff and a copy of the cumulative rejection list after each day's operations. Save days in chronological order using one journal and one replay. DailyReport reads these prefixes without storing another balance or decision model. |
+| Original versus revised balances | Closing and available use that day's saved cutoff. Revised closing uses the last saved cutoff for the same value day. Print both cutoffs in the report headings; later postings outside the saved window cannot change either view. |
+| Day 6 capitalization | Capture Day 6 only after both accounts close and receive their capitalization entries. Its displayed ledger and available balances include interest; earlier value days do not. |
+| Fee presentation | Display assessments added since the previous saved cutoff, using DailyClosing.fees. Show the positive charge amount and its value day. E7's three fees appear on processing Day 5 with value days 2, 4 and 5; they are not copied into earlier original closes. |
+| Error timing and repeated attempts | Use the difference between successive rejection prefixes, preserving repeated failures. Booked day does not assign an attempt to a report day. Capture requires the full cumulative rejection snapshot from the same replay. |
+| Accepted diagnostics | Show diagnostics from journal entries added since the previous cutoff. Keep these distinct from rejected attempts and preserve arrival order even for backdated requests. |
+| Historical authorization states | Show states at each original close. Auth-A remains APPROVED in Days 2 and 3, then SETTLED. Auth-B remains DECLINED after E9. The report does not reevaluate decisions using revised balances. |
+| Rendering | Print to a supplied PrintStream so the command uses System.out and tests capture output without replacing global stdout. Rendering makes no journal writes. An empty report prints nothing. |

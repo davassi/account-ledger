@@ -8,7 +8,9 @@ prove that the policy satisfies the requirement.
 It is a valid requirement, and the settlement implementation now satisfies it.
 Criterion 6 also cannot be refused solely because the ledger is append-only:
 compensating credits can restore net fees without deleting their assessments.
-Its refund interpretation remains open; the current code retains assessed fees.
+The adopted reversal scope compensates only the referenced entry, retaining
+separate fee assessments. We refuse criterion 6 as an automatic-restoration
+claim under that policy; automatic fee refunds are outside this implementation.
 
 ## Verdict on every criterion
 
@@ -19,13 +21,15 @@ Its refund interpretation remains open; the current code retains assessed fees.
 | 3 | The Day 4 settlement of Auth-A must be accepted. | **Accept.** |
 | 4 | A settlement with an authorization ID absent from the ledger must be rejected without a debit. | **Accept; implemented and tested.** |
 | 5 | If Auth-B is approved, its hold reduces availability but not ledger balance. | **Accept:** conditional statement; Auth-B is declined in this stream. |
-| 6 | After E9, all balances and fees return to pre-E7 values. | **Needs a precise meaning:** possible for net economic values through compensations, impossible for erasing recorded history. The current fee-retention policy does not meet the net-refund reading. |
+| 6 | After E9, all balances and fees return to pre-E7 values. | **Refuse as an automatic consequence of E9:** E9 reverses E7's principal only; the three separately assessed fees remain. This verdict depends on the documented reversal scope, not on append-only prohibiting refunds. |
 | 7 | E10's three installments must each be BHD 3.334. | **Refuse:** they would total BHD 10.002. |
 | 8 | Discard any difference between rounded accruals and capitalized interest. | **Refuse:** this contradicts the required exact equality. |
 
 The unqualified contradictions are **2, 7 and 8**. A different implementation
-preference does not justify adding criterion 4 to that list. Criterion 6 needs
-an explicit refund interpretation before claiming compliance or rejecting it.
+preference does not justify adding criterion 4 to that list. **Criterion 6 is
+also refused under the adopted interpretation:** a reversal does not imply
+automatic compensation of separate fee entries. This is an explicit policy
+resolution, not a claim that net fee restoration is technically impossible.
 
 ## 1 — Accept the pre-fee Day 2 balance
 
@@ -115,28 +119,27 @@ The condition must still be tested with a funded account. Existing
 [AuthorizationsTest](src/test/java/accountledger/AuthorizationsTest.java) cases
 verify approved holds, unchanged ledger balances and the zero-availability boundary.
 
-## 6 — Distinguish economic restoration from deleting history
+## 6 — Refuse automatic restoration of balances and fees
 
-E9 names E7. Negating E7's postings restores AED 620.00 of principal. It does
-not, by itself, create compensation for fee postings in other entries. That is
-why the current code retains AED 75.00 in fees.
+E9 explicitly names E7. Under the adopted reversal scope, it negates E7's
+postings and restores AED 620.00 of principal. The three fee assessments are
+separate entries and retain their AED 75.00 charge. The pre-capitalization
+balance becomes AED 390.00, compared with AED 465.00 before E7.
 
-However, append-only permits new compensating postings. It does not require
-retaining fees economically. Crediting AED 25.00 at each affected value day
-could restore net balances and net fees while leaving the three original fee
-assessments and all original snapshots intact.
+The non-negotiable rules specify fee assessment, but no automatic fee-refund
+policy. We interpret this criterion as claiming that reversing E7 alone
+restores everything, and refuse that claim. We do not introduce additional
+compensations to make it true. The fee-retention decision is settled for this
+implementation; a refund component is not outstanding work.
 
-Therefore:
+Append-only would permit explicit compensating credits. It does **not** force
+economic fee retention. A different policy could satisfy a net-refund reading
+of the criterion while preserving the original assessments. Deleting those
+records or changing earlier saved views would violate append-only.
 
-- If “all balances and fees” means their net economic effect before capitalization,
-  a refund policy can satisfy it. Our implementation currently does not.
-- If it means removing or changing the past assessment records or saved historical
-  views, refuse that interpretation: it violates append-only.
-- The causal fees, refund dates and audit presentation must be explicit. Retaining
-  fees is a policy choice, not proof that the stated criterion is intrinsically wrong.
-
-The existing deliberately failing test exposes this choice; it does not turn
-it into a non-negotiable rule.
+The deliberately failing test exposes the timing dependence of our chosen
+policy. The daily report likewise preserves the original Day 5 close of
+AED -230.00 beside its revised AED 390.00 balance; E9 does not rewrite history.
 
 ## 7 — Refuse three installments of BHD 3.334
 
@@ -174,7 +177,8 @@ These are distinct outcomes, not three interchangeable expected outputs:
 The audit initially verified the latter two as counterfactual replays. The
 ordinary suite and executable now verify **AED 390.93** in the implementation.
 The fee-compensation row remains a counterfactual, with credits at the three
-original value days after E9. Both alternatives keep the original fee facts.
+original value days after E9. It documents the rejected alternative, not a
+planned feature. Both alternatives keep the original fee facts.
 BHD ends at 10.008 in all three cases. Rejecting E6 changes the AED result;
 the fee-refund interpretation changes it again.
 
@@ -192,27 +196,27 @@ Expected AED 0.00, actual AED -25.00. Both paths cancel the same debit, but a fe
 assessed before reversal remains charged. Its inline comment explains that
 limitation. The test runs separately by name and is not disabled.
 
-The ordinary suite now passes **178 tests**, including the criterion 4
-correction. This verifies the implemented behavior; it does not resolve the
-fee-refund interpretation of criterion 6.
+The ordinary suite now passes **187 tests**, including the criterion 4
+correction and nine daily-report cases. The refund interpretation above is
+an explicit decision; passing tests verify its implementation, not its necessity.
 
 ## Deliverable audit
 
 | Deliverable | Finding |
 | --- | --- |
 | Git history, no squashing | The local history and reflog showed 18 incremental commits at the start of this review, including a separate corrective commit. Preserve them when publishing. |
-| README | Contains runnable commands, observed final output and an explicit statement that the per-day report is unfinished. |
+| README | Contains runnable commands, daily report examples and an explanation of original versus revised balances. |
 | NUMBERS.md | Documents fee, rate, precision, window, build versions and fixture rationale. A check found all numeric string-literal magnitudes in the Java sources represented, normalizing signs and trailing zeros; this is a coverage aid, not proof of every rationale. |
-| AMBIGUITIES.md | Substantial decisions are present. The missing-authorization policy is corrected; the refund interpretation remains unresolved. |
+| AMBIGUITIES.md | Records the corrected settlement rule, the adopted fee-retention policy and the daily report's snapshot and timing semantics. |
 | REJECTED.md | This review covers all eight criteria and retains the actual abandoned approaches below. |
 | Annotated failing test | Present and verified separately as described above. |
 | WORKLOG.md | Contains timestamped activity records; this audit adds an entry using the observed UTC clock and actual checks. |
-| Per-day output from the original Build requirement | **Missing.** Scenario prints a final summary, not daily closing balances, fee assessments, authorization states and errors. |
+| Per-day output from the original Build requirement | **Implemented.** DailyReport prints all six closes for both accounts, revised balances, availability, newly assessed fees with value days, original authorization states, errors and diagnostics. Day 6 includes capitalization. |
 | GitHub repository | **Not verified.** No Git remote is configured locally. A local commit history does not demonstrate GitHub publication. |
 
-The repository is **not ready for acceptance**: criterion 6 needs a precise
-refund interpretation, the per-day report is unfinished, and GitHub publication
-remains unverified. Criterion 4 is corrected.
+The local implementation and documentation cover the agreed scope. GitHub
+publication remains unverified; no remote is configured. Criterion 4 is
+corrected and criterion 6 has the explicit interpretation above.
 
 ## Approaches abandoned during implementation
 
@@ -253,3 +257,9 @@ criterion wrong. The implementation now rejects missing references through
 the existing Replay boundary. The obsolete MISSING_AUTHORIZATION diagnostic
 and the redundant authorization-ID reservation check were removed; no new
 retry mechanism or separate settlement state was introduced.
+
+An automatic fee-refund component was proposed while exploring criterion 6's
+net-restoration reading. Dropped that proposal before implementation: the
+adopted scope reverses the referenced entry only and retains separate fees.
+The alternative calculation remains documented above; it is not a missing
+business requirement or a pending component.

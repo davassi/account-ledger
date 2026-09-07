@@ -1,9 +1,9 @@
 # Numbers
 
 The scenario results below reject E6 in accordance with criterion 4 and retain
-assessed fees. Fee refunds under criterion 6 still need an explicit interpretation.
-See [REJECTED.md](REJECTED.md); the current results do not claim compliance with
-the net-refund reading of that criterion.
+assessed fees. The adopted scope reverses E7 only, refusing criterion 6's
+automatic-restoration claim. Fee refunds are not pending work.
+See [REJECTED.md](REJECTED.md) for this policy resolution and its alternatives.
 
 ## Money component
 
@@ -156,6 +156,22 @@ policy used by the daily interest calculation.
 | 1 rejected attempt, 9 accepted input events and 0 accepted anomalies | E6 is rejected without a debit because Auth-Z is absent. Auth-B's decline is a handled outcome. These are observed results of the ten-event stream, not configured limits. |
 | Opening 0.00 AED and 0.000 BHD on each invocation | Imposed account balances. Each run creates fresh state so independent executions reproduce the same entries and final balances. |
 
+## Daily report
+
+| Number | Source and rationale |
+| --- | --- |
+| 6 snapshots and 12 account rows | One saved boundary per specified day and one row per account per boundary. Halving either count would omit required output. |
+| Cutoffs 4, 7, 10, 13, 18 and 26 | Derived from the accepted input order and end-of-day operations. Final 26 is 9 accepted inputs + 12 closes + 3 reassessments + 2 capitalizations. E6 advances only the rejection log. These positions are observed, not hardcoded report constants. |
+| Initial day and cutoff 0; previous index minus 1 | The empty prefix before the first saved day, then the immediately preceding snapshot. They locate newly added fees, diagnostics and rejections; fractional positions have no meaning. |
+| Original AED closes 250.00, 250.00, 650.00, 465.00, -230.00, 390.93 | The six actual end-of-day balances. Day 5 includes the backdated 620 debit and all 75 in fees; Day 6 includes the 620 reversal and 0.93 capitalization. Halving an amount would no longer replay the specified events. |
+| Original AED availability 250.00, 50.00, 450.00, 465.00, -230.00, 390.93 | Subtract Auth-A's 200 hold on Days 2 and 3 only. Settlement releases it; declined Auth-B reserves nothing. These outcomes verify that later states do not leak into old closes. |
+| Revised AED closes 250.00, 225.00, 625.00, 415.00, 390.00, 390.93 | Use final knowledge at each value day. Only Day 6 includes the capitalization credit; earlier rows match the previously documented pre-capitalization balances. |
+| Original BHD Day 5 0.000 versus revised 10.000; Day 6 10.008 | The late E10 credit belongs to value Day 5 but arrives during Day 6. The final row includes 0.008 interest. Halving either date or amount would lose the prescribed late-arrival case. |
+| 11 account rows without new fees | Of 12 account rows, only ACC-001 on Day 5 receives assessments, displaying three charges at value days 2, 4 and 5. This count detects duplicate display on later days; it is not an assessment limit. |
+| Error on Day 4; two identical failures in the report fixture | E6 is the stream's sole rejection. The separate fixture repeats one failed request to verify both attempts survive; halving that count would miss accidental deduplication. |
+| Fixture booked Day 1, received Day 2; later changes on Day 3 | Verify that backdated errors and accepted diagnostics appear on their arrival day, and that changes after the last capture cannot alter a saved report. Dates reuse the smallest distinct days for these boundaries. |
+| Fixture amounts 250.00, 200.00, 400.00, 185.00, 180.00, 300.00 and 50.00 AED | Reuse existing funding, hold, settlement, rejection and decline cases. They isolate snapshot behavior without choosing new monetary thresholds. |
+
 ## Build versions
 
 | Version | Rationale |
@@ -191,12 +207,12 @@ meaning. The project is verified with Maven 3.6.3, present in the environment.
 
 ## Acceptance audit calculations
 
-The E6 rejection is implemented. Fee compensation remains a counterfactual
-calculation, pending the criterion 6 policy decision.
+The E6 rejection is implemented. Fee compensation is a counterfactual
+calculation retained to document an alternative that was not adopted.
 
 | Number | Source and rationale |
 | --- | --- |
 | AED -395.00 | Day 2 as actually known at the Day 5 close: pre-fee -370 minus its 25 fee. Separates the qualified first criterion from an inclusive closing balance. |
 | AED -155.00 before fees on days 4 and 5 | 250 + 400 - 185 - 620. Days 2, 4 and 5 still require fees; rejecting E6 does not reduce the count to one. |
 | AED 390.00 + 0.93 = 390.93 | Reject E6 and retain the three fees: revised balances 250, 225, 625, 415, 390, 390 yield daily accruals 0.10, 0.09, 0.25, 0.17, 0.16, 0.16. These are derived outcomes, not tunable constants. |
-| AED 465.00 + 1.03 = 466.03 | Reject E6 and add three 25 fee refunds at their original value days after E9. Revised balances 250, 250, 650, 465, 465, 465 yield daily accruals 0.10, 0.10, 0.26, 0.19, 0.19, 0.19. All original fee records remain. Halving refunds would leave fees partially charged. |
+| AED 465.00 + 1.03 = 466.03 | Alternative not adopted: reject E6 and add three 25 fee refunds at their original value days after E9. Revised balances 250, 250, 650, 465, 465, 465 yield daily accruals 0.10, 0.10, 0.26, 0.19, 0.19, 0.19. All original fee records remain. Halving refunds would leave fees partially charged. |

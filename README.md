@@ -1,6 +1,10 @@
-# Account Ledger
+# Memory Account Ledger
 
-An in-memory account ledger in **Java 21**, built around an append-only journal.
+![Java 21](https://img.shields.io/badge/Java-21-informational?style=flat-square)
+![Maven 3.6+](https://img.shields.io/badge/Maven-3.6%2B-informational?style=flat-square)
+![Runtime dependencies: none](https://img.shields.io/badge/runtime%20dependencies-none-informational?style=flat-square)
+
+MAL is an in-Memory Account Ledger in **Java 21**, built around an append-only journal.
 It replays six days of credits, debits, card authorizations, settlements and
 backdated corrections across AED and BHD accounts. Earlier views remain
 queryable after later events change the balances.
@@ -8,14 +12,15 @@ queryable after later events change the balances.
 The application runs locally with no web layer, database, persistence or runtime
 libraries beyond the JDK. Each execution starts with fresh state.
 
-**Current status:** the ledger core, test suite and executable replay are
-implemented. The command prints a final summary; the required per-day report
-is still to be implemented.
+> [!NOTE]
+> **Current status:** the ledger core, test suite and executable replay are
+> implemented. The command prints all six daily closes, including historical
+> states, fee assessments, errors and balances revised at the end of Day 6.
 
 **Acceptance audit:** criterion 4 is now implemented: an unknown authorization's
-settlement is rejected without a debit. Criterion 6's fee-refund interpretation
-remains open; the current code retains assessed fees. See [REJECTED.md](REJECTED.md)
-for the findings and numerical impact.
+settlement is rejected without a debit. For criterion 6, E9 compensates E7 only;
+the separately assessed fees remain. Automatic fee restoration is refused under
+that documented interpretation. See [REJECTED.md](REJECTED.md) for the reasoning.
 
 ## Quick start
 
@@ -33,14 +38,87 @@ subsequent runs, the suite can also run offline with `mvn -o test`.
 ## Expected output
 
 ```text
-Final balances after Day 6 capitalization:
-ACC-001: AED 390.93
-ACC-002: BHD 10.008
-ACC-001 Auth-A: SETTLED
-ACC-001 Auth-B: DECLINED
-Rejected attempts: 1
-Day 4 E6: Unknown authorization: Auth-Z
+Closing and available use each day's saved close.
+Revised closing uses the final saved close: Day 6 (sequence 26).
+
+Day 1 (sequence 4)
+  ACC-001 | closing AED 250.00 | available AED 250.00 | revised closing AED 250.00
+    Fees assessed today: none
+    Authorizations: none
+  ACC-002 | closing BHD 0.000 | available BHD 0.000 | revised closing BHD 0.000
+    Fees assessed today: none
+    Authorizations: none
+  Errors: none
+  Diagnostics: none
+
+Day 2 (sequence 7)
+  ACC-001 | closing AED 250.00 | available AED 50.00 | revised closing AED 225.00
+    Fees assessed today: none
+    Authorizations: Auth-A=APPROVED
+  ACC-002 | closing BHD 0.000 | available BHD 0.000 | revised closing BHD 0.000
+    Fees assessed today: none
+    Authorizations: none
+  Errors: none
+  Diagnostics: none
+
+Day 3 (sequence 10)
+  ACC-001 | closing AED 650.00 | available AED 450.00 | revised closing AED 625.00
+    Fees assessed today: none
+    Authorizations: Auth-A=APPROVED
+  ACC-002 | closing BHD 0.000 | available BHD 0.000 | revised closing BHD 0.000
+    Fees assessed today: none
+    Authorizations: none
+  Errors: none
+  Diagnostics: none
+
+Day 4 (sequence 13)
+  ACC-001 | closing AED 465.00 | available AED 465.00 | revised closing AED 415.00
+    Fees assessed today: none
+    Authorizations: Auth-A=SETTLED
+  ACC-002 | closing BHD 0.000 | available BHD 0.000 | revised closing BHD 0.000
+    Fees assessed today: none
+    Authorizations: none
+  Errors: E6: Unknown authorization: Auth-Z
+  Diagnostics: none
+
+Day 5 (sequence 18)
+  ACC-001 | closing AED -230.00 | available AED -230.00 | revised closing AED 390.00
+    Fees assessed today: AED 25.00 (value Day 2); AED 25.00 (value Day 4); AED 25.00 (value Day 5)
+    Authorizations: Auth-A=SETTLED; Auth-B=DECLINED
+  ACC-002 | closing BHD 0.000 | available BHD 0.000 | revised closing BHD 10.000
+    Fees assessed today: none
+    Authorizations: none
+  Errors: none
+  Diagnostics: none
+
+Day 6 (sequence 26)
+  ACC-001 | closing AED 390.93 | available AED 390.93 | revised closing AED 390.93
+    Fees assessed today: none
+    Authorizations: Auth-A=SETTLED; Auth-B=DECLINED
+  ACC-002 | closing BHD 10.008 | available BHD 10.008 | revised closing BHD 10.008
+    Fees assessed today: none
+    Authorizations: none
+  Errors: none
+  Diagnostics: none
 ```
+
+### How to read the report
+
+| Field | Meaning |
+| --- | --- |
+| `closing` | Ledger balance as known at that day's saved close, including fees. Day 6 also includes capitalized interest. |
+| `available` | Ledger minus active holds at that same original close. |
+| `revised closing` | Balance for the same value day using all knowledge at the final saved close. Later entries outside that saved window cannot change it. |
+| `Fees assessed today` | New assessments recorded since the previous close. Charges are positive amounts; `value Day` states when each debit affects the ledger. |
+| `Authorizations` | States known at the original close. They are never reevaluated using revised balances. |
+| `Errors` / `Diagnostics` | Rejected attempts and accepted anomalies received that day, respectively. `none` is explicit; repeated failed attempts remain separate. |
+| `sequence` | The saved journal prefix used for the historical view. The report also copies the rejection prefix because failures do not advance journal sequences. |
+
+Day 2 originally closed at AED 250.00 with AED 50.00 available under Auth-A's
+hold. Its revised closing balance is AED 225.00 after the backdated debit,
+reversal and retained Day 2 fee. The fee appears in Day 5's report because
+that is when it was assessed. E10 similarly revises BHD's Day 5 balance to
+10.000 without changing its original zero close.
 
 Auth-A has settled and released its hold. Auth-B was declined when it was
 requested; E9 does not change that decision. E6 is rejected because Auth-Z has
@@ -49,6 +127,8 @@ no preceding authorization. Its AED 180.00 never leaves the account.
 The three overdraft fees total **AED 75.00**. Capitalized interest is
 **AED 0.93** and **BHD 0.008**. These values are calculated by the core and
 verified by the tests.
+
+---
 
 ## The six-day scenario
 
@@ -97,6 +177,8 @@ the original Day 2 AED close was 250.00,
 and the original Day 5 BHD close was 0.000. Both remain queryable using their
 saved journal sequences.
 
+---
+
 ## Rules and policy choices
 
 | Area | Behavior |
@@ -110,10 +192,13 @@ saved journal sequences.
 | Interest | Accrue 0.04% daily on positive ledger balances after fees, using `HALF_EVEN` at the account's precision. Accruals stay unspendable until capitalization. |
 | Capitalization | Credit the exact sum of the six rounded daily accruals once, at the end of Day 6. Day 6 earns interest before that credit; no remainder is discarded. |
 
-Fee retention does not satisfy a net-refund reading of criterion 6;
-append-only permits compensation without deleting the original assessments.
-[REJECTED.md](REJECTED.md) separates these gaps from the incorrect criteria.
-[AMBIGUITIES.md](AMBIGUITIES.md) records the implemented policies and open questions.
+E9 reverses E7's AED 620.00 principal only; it does not automatically refund
+AED 75.00 assessed in separate entries. Explicit refunds would be compatible
+with append-only, but are not implied by the adopted reversal scope.
+[REJECTED.md](REJECTED.md) explains the refusal of automatic restoration in
+criterion 6. [AMBIGUITIES.md](AMBIGUITIES.md) records the decisions applied.
+
+---
 
 ## Dates, history and retries
 
@@ -161,16 +246,38 @@ remains in an append-only log and does not reserve its event ID. It may succeed
 later if corrected or if a missing prerequisite arrives. Declines and accepted
 diagnostics return `true`.
 
-For historical error reports, save the immutable `replay.rejections()` snapshot
-alongside the journal cutoff: failed attempts do not advance journal sequences.
+`DailyReport.capture` saves a copy of `replay.rejections()` alongside the
+journal cutoff after each day. Both prefixes remain fixed when later events
+arrive; rejected attempts do not advance journal sequences.
+
+---
 
 ## Code map
 
 All application code is under [`src/main/java/accountledger`](src/main/java/accountledger).
 
+```mermaid
+flowchart TD
+    Scenario --> Replay
+    Scenario --> DailyReport
+    DailyReport -->|reads| Journal
+    Replay --> Authorizations
+    Replay --> Settlements
+    Replay --> Reversals
+    Replay --> DailyClosing
+    DailyClosing --> Interest
+    Authorizations --> Journal
+    Settlements --> Journal
+    Reversals --> Journal
+    DailyClosing --> Journal
+    Interest --> Journal
+    Journal[("Journal — append-only")]
+```
+
 | Component | Responsibility |
 | --- | --- |
-| [Scenario](src/main/java/accountledger/Scenario.java) | Executable stream, explicit closes and final summary. |
+| [Scenario](src/main/java/accountledger/Scenario.java) | Executable stream, daily boundaries and final capitalization. |
+| [DailyReport](src/main/java/accountledger/DailyReport.java) | Saved closes, original and revised balances, daily fees, states and errors. |
 | [Replay](src/main/java/accountledger/Replay.java) | Dispatch requests and record expected rejections. |
 | [Journal](src/main/java/accountledger/Journal.java) | Atomic append, shared retry detection and historical queries. |
 | [Money](src/main/java/accountledger/Money.java) | Currency precision, exact arithmetic, rounding and installment splitting. |
@@ -184,6 +291,8 @@ A `Request` is the original input. A `Posting` is a signed monetary movement.
 A `Journal.Entry` groups the request with its effects: postings, authorization
 states, diagnostics and accruals. One entry can contain several postings, as E10 does.
 
+---
+
 ## Tests and the deliberate counterexample
 
 The ordinary suite covers decimal precision, atomic writes, retries, historical
@@ -191,8 +300,10 @@ views, holds, settlements, reversals, fees, interest and rejected attempts.
 [DailyClosingTest](src/test/java/accountledger/DailyClosingTest.java) checks the
 complete scenario's financial results;
 [ScenarioTest](src/test/java/accountledger/ScenarioTest.java) checks arrival order
-and closing boundaries. Maven prints the test results and stores reports in
-`target/surefire-reports/`.
+and closing boundaries. [DailyReportTest](src/test/java/accountledger/DailyReportTest.java)
+checks all six daily outputs, historical availability, late BHD credit,
+capitalization, fee dates, errors and immutable report boundaries. The ordinary
+suite contains **187 tests**. Maven stores reports in `target/surefire-reports/`.
 
 One required test deliberately challenges the chosen fee-retention policy.
 Run it separately:
@@ -201,12 +312,15 @@ Run it separately:
 mvn -o -Dtest=FeeTimingCounterexample test
 ```
 
-**Expected result: one assertion failure and a nonzero exit.** Reversing before
-close leaves AED 0.00; reversing after close leaves AED -25.00 because the
-assessed fee is retained. This exposes the policy's dependence on timing.
+> [!IMPORTANT]
+> **Expected result: one assertion failure and a nonzero exit.** Reversing before
+> close leaves AED 0.00; reversing after close leaves AED -25.00 because the
+> assessed fee is retained. This exposes the policy's dependence on timing.
 [FeeTimingCounterexample.java](src/test/java/accountledger/FeeTimingCounterexample.java)
 explains it inline. Its class name excludes it from the default test selection;
 it is not disabled.
+
+---
 
 ## Scope and documentation
 
