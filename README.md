@@ -12,6 +12,11 @@ libraries beyond the JDK. Each execution starts with fresh state.
 implemented. The command prints a final summary; the required per-day report
 is still to be implemented.
 
+**Acceptance audit:** the current code also violates criterion 4 by debiting
+an unknown authorization's settlement. Criterion 6 requires an explicit fee-refund
+interpretation. The output below describes current behavior, not a completed
+acceptance result. See [REJECTED.md](REJECTED.md) for the findings and numerical impact.
+
 ## Quick start
 
 Requires **JDK 21** and **Maven**; verified with Maven 3.6.3. From the repository root:
@@ -110,10 +115,11 @@ saved journal sequences.
 | Interest | Accrue 0.04% daily on positive ledger balances after fees, using `HALF_EVEN` at the account's precision. Accruals stay unspendable until capitalization. |
 | Capitalization | Credit the exact sum of the six rounded daily accruals once, at the end of Day 6. Day 6 earns interest before that credit; no remainder is discarded. |
 
-Accepting unmatched settlements and retaining assessed fees are explicit policy
-choices. The brief permits alternatives. [REJECTED.md](REJECTED.md) distinguishes
-criteria that conflict with the rules from criteria refused under those choices;
-[AMBIGUITIES.md](AMBIGUITIES.md) records the detailed decisions.
+The current unmatched-settlement policy conflicts with criterion 4 and needs
+correction. Fee retention does not satisfy a net-refund reading of criterion 6;
+append-only permits compensation without deleting the original assessments.
+[REJECTED.md](REJECTED.md) separates these gaps from the incorrect criteria.
+[AMBIGUITIES.md](AMBIGUITIES.md) records the implemented policies and open questions.
 
 ## Dates, history and retries
 

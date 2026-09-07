@@ -1,63 +1,199 @@
-# Numeri
+# Numbers
 
-## Componente Money
+The scenario results below describe the current implementation. The acceptance
+audit found that its debit of E6 conflicts with criterion 4; fee refunds under
+criterion 6 also need an explicit interpretation. See [REJECTED.md](REJECTED.md).
+These current results must not be presented as fully compliant expected values.
 
-| Numero | Origine e motivazione |
+## Money component
+
+| Number | Source and rationale |
 | --- | --- |
-| AED: 2 decimali | Imposto dal requisito; dimezzare la scala perderebbe i centesimi. |
-| BHD: 3 decimali | Imposto dal requisito; una scala inferiore perderebbe i millesimi. |
-| Zero | Identità della somma e risultato di un importo sommato al proprio opposto; non è una soglia configurabile. |
-| 1200.00, 950.00, 620.00 | Importi E1, E2 ed E7, usati nei test. Producono 250.00 e -370.00; dimezzarli cambierebbe la traccia richiesta. |
-| 1.2, 1.2000, 1.20, 1.200 | Rappresentazioni dello stesso valore usate per verificare normalizzazione ed uguaglianza. Il valore è esemplificativo; conta la diversa scala. |
-| 1.001 AED, 1.0001 BHD | Input non rappresentabili alle rispettive scale, che devono essere rifiutati. |
-| 0.10 + 0.20 = 0.30 | Esempio di aritmetica decimale esatta. Dimezzare i valori non aggiungerebbe una proprietà diversa. |
-| 0.001 + 0.002 = 0.003 BHD | Verifica operazioni in millesimi; dimezzare 0.001 produrrebbe un input non rappresentabile. |
-| 1.00 AED e 1.000 BHD | Importi di uguale valore numerico usati per isolare l'incompatibilità delle valute. |
+| AED: 2 decimals | Imposed by the requirement; halving the scale would lose the cents. |
+| BHD: 3 decimals | Imposed by the requirement; a smaller scale would lose the thousandths. |
+| Zero | The identity of addition and the result of an amount added to its own opposite; not a configurable threshold. |
+| 1200.00, 950.00, 620.00 | The E1, E2 and E7 amounts, used in the tests. They produce 250.00 and -370.00; halving them would change the required brief. |
+| 1.2, 1.2000, 1.20, 1.200 | Representations of the same value, used to verify normalization and equality. The value is illustrative; what matters is the differing scale. |
+| 1.001 AED, 1.0001 BHD | Inputs not representable at their respective scales, which must be rejected. |
+| 0.10 + 0.20 = 0.30 | An example of exact decimal arithmetic. Halving the values would not add a different property. |
+| 0.001 + 0.002 = 0.003 BHD | Verifies operations in thousandths; halving 0.001 would produce a non-representable input. |
+| 1.00 AED and 1.000 BHD | Amounts of equal numeric value, used to isolate currency incompatibility. |
 
-## Ripartizione in rate
+## Multiplication and rounding
 
-| Numero | Origine e motivazione |
+| Number | Source and rationale |
 | --- | --- |
-| 10.000 BHD in 3 rate | Caso E10: 10 000 millesimi divisi in tre producono 3.334, 3.333, 3.333. Importo e numero di rate sono imposti dalla traccia. |
-| 10.00 AED in 3 rate | Stesso valore nella valuta a due decimali: 3.34, 3.33, 3.33. Verifica che la scala segua la valuta. |
-| 1 unità minima | Massima differenza tra due rate e passo usato per distribuire il resto. Mezza unità non è rappresentabile. |
-| Segno -1, 0, +1 | Determina il verso delle unità residue: split di un importo negativo deve compensare le corrispondenti rate positive. |
-| 0.02 AED in 3 rate | Due unità minime e tre rate: 0.01, 0.01, 0.00. Verifica resto maggiore di uno e una rata zero. Il caso negativo verifica la stessa distribuzione con segno opposto. |
-| 9.00 AED in 3 rate | Caso con quoziente positivo e resto zero: tre rate da 3.00. |
-| 1 e 2 rate | Verificano il caso identità e una divisione esatta diversa dalle tre rate di E10; 10.000 BHD in due dà 5.000 per rata. |
-| 0 e -1 rate | Primo conteggio non valido e un conteggio negativo: entrambi rifiutati. |
-| 92233720368547758.08 AED | Sono 2^63 unità minime, appena oltre il massimo di long. Verifica che la ripartizione mantenga la precisione BigInteger; dimezzarlo nasconderebbe quel limite. |
+| 0.0004 | The exact factor for the required daily rate of 0.04%. Halving it would change the requirement. The helper accepts a caller-supplied factor; it does not own the rate. |
+| 250.00 and 235.00 AED; 10.000 BHD | Reuse balances from the brief and its calculations. The daily products round to 0.10, 0.09 and 0.004 respectively, exercising exact and rounded results at both scales. |
+| 12.50 and 37.50 AED; 1.250 and 3.750 BHD | At the daily rate they produce exactly 0.5 and 1.5 minor units. HALF_EVEN rounds them to zero and two minor units. Halving these balances would remove the tie. |
+| 0.5 and 2 | Halving one minor unit must fail with UNNECESSARY, while doubling it is exact. Halving 2 would reduce the multiplication check to an identity. |
+| 100.00, 0.000049 and 0.000051 | Products 0.0049 and 0.0051 lie on opposite sides of a half-cent. Rounding the factor to 0.00005 first loses that distinction. |
+| 200.00, -200.00, 0.5, -0.5 and 0 | Reuse Auth-A's magnitude to check signed and zero products: 100.00, -100.00 and 0.00. The magnitudes are illustrative; the property is the combination of signs. |
+| Sign -1, 0, +1 | Standard signum values for negative, zero and positive stored amounts; these are mathematical categories, not thresholds to tune. |
 
-## Storico e saldi
+The multiplication tests also select HALF_UP, DOWN and UP explicitly to verify
+that rounding is controlled by the caller. HALF_EVEN remains the documented
+policy used by the daily interest calculation.
 
-| Numero | Origine e motivazione |
+## Splitting into installments
+
+| Number | Source and rationale |
 | --- | --- |
-| Giorno minimo 1 | La traccia parte dal Giorno 1. Il core accetta giorni interi positivi; la finestra di sei giorni appartiene al runner. |
-| Sequenza 0 | Prefisso senza registrazioni, con il solo saldo iniziale. |
-| Prima sequenza 1, incremento 1 | Ogni gruppo accettato occupa una posizione intera nello storico, indipendentemente dal numero di movimenti. Ripetizioni identiche e gruppi rifiutati non consumano una posizione. |
-| Saldi iniziali 0.00 AED e 0.000 BHD | Imposti per ACC-001 e ACC-002. Il test sintetico con saldo iniziale 1200.00 verifica che un saldo non nullo venga incluso una volta sola. |
-| 400.00, 250.00, -370.00, 30.00, 650.00 | 400.00 proviene da E4; gli altri valori derivano da E1, E2, E4, E7 ed E9, prima delle commissioni. Verificano separatamente valuta e conoscenza. |
-| Giorni contabilizzati 5, 6, 5 | Ordine di E7, E9 ed E10: dimostra che il giorno contabilizzato non ordina lo storico. |
-| 400.00 con contabilizzazione 1 e valuta 3 | Caso sintetico di valuta futura: l'importo entra nel saldo soltanto dal Giorno 3. |
-| 0 e -1 come giorni, -1 e 1 come cutoff di un journal vuoto | Verificano limiti invalidi: i giorni devono essere positivi e il cutoff deve identificare un prefisso esistente. |
-| 10 nel test di rifiuto atomico | Importo rappresentabile in entrambe le valute; isola errori di conto o valuta da errori di precisione. Dimezzarlo non cambierebbe la proprietà verificata. |
+| 10.000 BHD in 3 installments | The E10 case: 10,000 thousandths divided by three produce 3.334, 3.333, 3.333. Amount and installment count are imposed by the brief. |
+| 10.00 AED in 3 installments | The same value in the two-decimal currency: 3.34, 3.33, 3.33. Verifies that the scale follows the currency. |
+| 1 minor unit | The maximum difference between two installments, and the step used to distribute the remainder. Half a unit is not representable. |
+| Sign -1, 0, +1 | Determines the direction of the leftover units: splitting a negative amount must compensate the corresponding positive installments. |
+| 0.02 AED in 3 installments | Two minor units and three installments: 0.01, 0.01, 0.00. Verifies a remainder greater than one and a zero installment. The negative case verifies the same distribution with the opposite sign. |
+| 9.00 AED in 3 installments | A case with a positive quotient and zero remainder: three installments of 3.00. |
+| 1 and 2 installments | Verify the identity case and an exact division other than E10's three installments; 10.000 BHD in two gives 5.000 per installment. |
+| 0 and -1 installments | The first invalid count and a negative count: both rejected. |
+| 92233720368547758.08 AED | This is 2^63 minor units, just beyond the maximum of long. Verifies that the split keeps BigInteger precision; halving it would hide that boundary. |
 
-## Versioni di build
+## History and balances
 
-| Versione | Motivazione |
+| Number | Source and rationale |
 | --- | --- |
-| Java 21 | JDK già disponibile nell'ambiente; usato come release di compilazione. |
-| JUnit 5.10.5 | Versione già in cache; permette test standard senza un runner personalizzato. |
-| Maven Resources 3.3.1, Compiler 3.13.0, Surefire 3.5.2 | Versioni già in cache, fissate per non dipendere dai default di Maven. |
-| POM 4.0.0 | Versione del formato Maven, non un parametro applicativo. |
-| Progetto 0.1.0-SNAPSHOT | Identificativo iniziale di sviluppo. |
+| Minimum day 1 | The brief starts at Day 1. Journal postings and queries accept positive whole days; the interest policy limits closes to the six-day window. |
+| Sequence 0 | The prefix with no records, holding the opening balance alone. |
+| First sequence 1, increment 1 | Every accepted entry occupies one whole position in the history, regardless of how many postings it holds. Identical repetitions and rejected entries do not consume a position. |
+| Opening balances 0.00 AED and 0.000 BHD | Imposed for ACC-001 and ACC-002. The synthetic test with an opening balance of 1200.00 verifies that a non-zero opening balance is included exactly once. |
+| 400.00, 250.00, -370.00, 30.00, 650.00 | 400.00 comes from E4; the other values derive from E1, E2, E4, E7 and E9, before fees. They verify value day and knowledge separately. |
+| Booked days 5, 6, 5 | The order of E7, E9 and E10: it shows that the booked day does not order the history. |
+| 400.00 booked on 1 with value day 3 | A synthetic future-value-day case: the amount enters the balance only from Day 3. |
+| 0 and -1 as days, -1 and 1 as cutoffs on an empty journal | Verify invalid bounds: days must be positive and the cutoff must identify an existing prefix. |
+| 10 in the atomic rejection test | An amount representable in both currencies; it isolates account or currency errors from precision errors. Halving it would not change the property under test. |
 
-Le versioni identificano strumenti e formati: dimezzarle non ha un significato
-funzionale. Il progetto è verificato con Maven 3.6.3, presente nell'ambiente.
+## Authorizations
 
-## Numeri previsti dai componenti successivi
+| Number | Source and rationale |
+| --- | --- |
+| Approval boundary 0 | Required: available funds may reach exactly zero after a new hold. A positive minimum would reject valid requests; a negative threshold would allow unfunded holds. |
+| Hold amount greater than 0 | Chosen input policy: zero reserves nothing and a negative hold would increase availability. There is no arbitrary positive minimum above the currency's smallest unit. |
+| 200.00 and 90.00 AED | E3 and E8 request these holds. Halving them would no longer exercise the specified authorizations. |
+| 50.00 AED | 250.00 minus Auth-A's 200.00: both the expected available balance and the exact second hold that exhausts it. Half would miss the equality boundary. |
+| 0.01 AED and 0.001 BHD | A request one minor unit beyond an exhausted balance must be declined. Half a minor unit is not representable. |
+| 200.01 AED | A conflicting retry differs from the original 200.00 by one minor unit. The change isolates the amount comparison. |
+| 400.00 AED | E4's credit also provides a synthetic hold larger than the initial 250.00 balance, and a future-value credit test. It is reused to avoid another arbitrary fixture amount. |
+| -170.00 and 450.00 AED | In the authorization-only fixture, 250 + 400 - 620 - 200 and then +620. Settlements and fees are absent. These balances verify that later debits and compensation do not rewrite decisions. |
+| 10.000 BHD | A synthetic funding credit reuses E10's amount; holding all of it tests the zero-available boundary at three decimals. |
+| One decision, zero postings per authorization | One request has one recorded approval or decline. It changes availability without creating a ledger movement; these counts are structural, not tunable constants. |
+| -570.00 AED | Day 2 as known after E7, before fees: 250 - 620 - 200. The saved original close still reports 50.00 available; the later prefix includes E7. |
+| 50.00 hold and 400.00 credit on Day 5 | Reuse existing fixture amounts to distinguish an original close, a later exhausted balance, and the later funded balance. None of these later entries may enter an earlier prefix. |
+| Cutoff -1 and lastSequence + 1 | The first invalid prefix on either side; zero is the valid empty prefix. All historical reads use the same bounds. |
 
-La traccia impone sei giorni, saldi iniziali zero, una commissione AED 25.00,
-un tasso giornaliero dello 0.04% (fattore esatto 0.0004), un massimo di una
-commissione per conto e giorno.
-Questi valori non sono parametri scelti per ottimizzare un risultato.
+## Settlements
+
+| Number | Source and rationale |
+| --- | --- |
+| 185.00 and 180.00 AED | Required E5 and E6 amounts. E5 releases the original 200.00 hold in full, including the unused 15.00; halving these amounts would change the scenario. |
+| 465.00 and 285.00 AED | Derived from 650.00 minus E5, then minus E6. With no remaining approved hold, ledger and available balances agree. |
+| One final settlement per reference | Chosen lifecycle policy; zero would prohibit settlement. Retries reuse the same event without another debit. This count is discrete, not a fractional limit. |
+| 650.01 and -0.01 AED | One cent beyond the fixture's ledger balance verifies that settlement may exceed both the hold and the funds. Half would miss the overdraft boundary. |
+| 620.00 hold, 470.00 ledger, 270.00 available | A synthetic decline reuses E7's amount against 450.00 available. A subsequent 180.00 settlement leaves 650 - 180 in the ledger, with Auth-A's 200.00 still held. Half the requested hold would be approved. |
+| -155.00 AED | 650 - 185 - 620 in a fixture containing E5 and E7, without E6 or fees. Backdating must not revive the settled hold. |
+| 3.334 and 6.666 BHD | Reuse an E10 installment amount for a synthetic settlement against 10.000. The result verifies three-decimal arithmetic and account isolation. Halving these values adds no distinct precision check. |
+| 185.01 AED | A conflicting retry differs from E5 by one minor unit, isolating the amount comparison. |
+| Value days 2 and 6, booked day 4 | Place a settlement debit before and after its recording day to separate value timing from hold release. Halving Day 6 would lose the future-value case. |
+| 0.00 and -185.00 AED, value day 0 | Invalid settlement boundaries: non-positive amounts and a non-positive day. Rejection must leave both ledger and hold untouched. |
+
+## Reversals
+
+| Number | Source and rationale |
+| --- | --- |
+| +620.00 AED, booked Day 6, value Day 2 | Required E9 compensation of E7's -620.00. The amount is derived, not supplied independently. Halving it would leave half the debit unreversed. |
+| -335.00 and 285.00 AED | E1–E7 leave 250 + 400 - 185 - 180 - 620; E9 restores 285.00 before fees and interest. These are scenario results, not adjustable parameters. |
+| -370.00 and 250.00 AED | Day 2 before and after E9 is known, excluding fees. The original cutoff must still report -370.00 after E9 arrives. |
+| -25.00, 225.00 and 260.00 AED | A synthetic single fee uses the required charge. Reversing E7 leaves 250 - 25 at Day 2 and 285 - 25 at Day 6. This test verifies no implicit fee refund; it does not simulate all daily assessments. |
+| -3.334, -3.333, -3.333 BHD | The exact opposites of E10's installments. Their total is -10.000, cancelling the original credit; halving them would only partially compensate it. |
+| -150.00 and -155.00 AED | Refunds of E5 or E6 in separate fixtures: -335 + 185 or -335 + 180. Neither refund reopens Auth-A's hold. |
+| Value Day 6 instead of Day 2 | A synthetic late compensation leaves earlier balances unchanged and becomes effective on Day 6. Halving the date would no longer test compensation at the end of the window. |
+| One reversal, all original postings | Chosen full-reversal lifecycle. Zero would disallow reversal; partial counts would violate the operation's all-or-nothing scope. Identical retries add zero entries. |
+| Days 0 and -1; changed days 5 and 3 | The first invalid value days and valid changes to E9's booked and value dates. They exercise rejection and request comparison; the core still accepts any positive whole day. |
+| 10.00 AED and 10.000 BHD in one entry | Reuse existing fixture amounts to test rejection of a multi-account reference. The amounts are illustrative; account separation is what matters. |
+
+## Daily closes and fees
+
+| Number | Source and rationale |
+| --- | --- |
+| AED 25.00, at most once per account per value day | Imposed by the requirement. The posting is -25.00; halving the fee would change the required result. |
+| First close Day 1, next day +1, no closed day 0 | Consecutive daily closes and their empty-history sentinel. These are discrete calendar positions, not configurable fractions. |
+| Fee threshold strictly below 0 | Required negative ledger balance. Zero is not an overdraft; active holds are excluded from this calculation. |
+| Value days 2, 4, 5; total 75.00 AED | The actual assessments caused by E7. Two are discovered on revisiting closed days, the third at the Day 5 close. Halving the number of assessments is not meaningful and charging only one fails the requirement. |
+| 5.00, -385.00 and -410.00 AED | After E7, Day 3 is 30 - 25 = 5. Day 5 is -335 - 50 before its own fee, then -335 - 75 after close. These verify chronological fee effects and the open-day boundary. |
+| 250.00, 225.00, 625.00, 235.00, 210.00, 210.00 AED | Day 1–6 balances after E9, before interest. They retain the three fees; values are derived from the complete required stream. |
+| 10.000 BHD on days 5 and 6 | E10 revises Day 5 after its original zero close. This is the balance before the separate capitalization credit. |
+| -10.00 on Day 1 and +20.00 on Day 2 | A synthetic late event leaves Day 2 at +10 before fees and -15 after the first 25 fee, triggering a second fee and a -40 close. Day 3 then closes at -65. The credit is twice the reused 10-unit fixture; halving it would test a zero starting balance instead of a positive one. |
+| -60.00 AED | A late -10 debit plus two 25 fees, both caught up at the next close. It tests that omitting an explicit reassessment does not omit fees. |
+| 0.00, +0.01 and -0.01 AED; -25.01 after fee | Zero and the nearest representable balances on either side of the eligibility boundary. Half a cent is not representable in AED. |
+| 200.00 hold and zero ledger | Reuse Auth-A's amount to distinguish negative availability (-200) from a non-negative ledger. The hold cannot trigger a fee by itself. |
+| -0.001 and +0.001 BHD | The smallest negative balance must fail for lack of a fee policy; an exact compensation permits a zero close using the previously rejected event ID. Halving the amounts would lose currency precision. |
+| Day 3 future debit booked on Day 1 | Reuses the history fixture's timing to verify that no fee appears in days 1 or 2. Halving the value day would remove that separation. |
+| 0.00 versus -25.00 AED in the counterexample | A -10 debit is fully reversed in both paths. Only a reversal after close retains the 25 fee. Halving the debit would expose the same property; 10 reuses the existing fixture. |
+
+## Rejected attempts
+
+| Number | Source and rationale |
+| --- | --- |
+| One rejection per failed attempt; zero accepted journal entries | Attempts are distinct facts, even with equal input. Zero journal writes preserve atomic rejection and leave the event ID available. Halving a discrete attempt count would lose history. |
+| Processing days 5 and 6, booked Day 5, value Day 2 | Reuse the scenario's separate clocks to verify that two failed reversals retain their input while recording different processing dates. Halving dates would remove the intended late-arrival case. |
+| AED 250.00, hold 200.00, settlement 0.00 then 185.00 | Reuse the brief's amounts. The rejected zero settlement leaves ledger 250 and available 50; the corrected settlement releases the hold and leaves 65. Zero is the invalid boundary; halving 185 would change the expected refund of held funds. |
+| AED 10.00 versus BHD 10.000 | Reuse equal numerical amounts to isolate account and currency errors in a multi-posting request. A valid first posting must not survive rejection of the second. |
+| AED -10.00 and +10.00 | A reversal succeeds after its missing original arrives, restoring 250 exactly. The magnitude is illustrative and reused; halving it would exercise the same property. |
+| AED 300.00 hold, settlements 180.00 and 50.00, later credit 300.00 | A hold above the opening 250 is declined, and accepted settlements leave 20 with diagnostics. A later 300 credit verifies that an accepted retry preserves the earlier decline. Halving the hold would incorrectly make it affordable. |
+| Day 6 capitalization, late +250.00 on Day 5, final 500.80 | Reuse the interest fixture to test the dispatch path and recovery after a stale-accrual rejection. Submitting capitalization as booked Day 5 must fail instead of silently changing the input date. |
+| Processing day 0 and settlement value day 0 | First invalid day values. The former is a caller error before execution; the latter is an expected domain rejection with a complete submitted request. Fractions are not valid calendar positions. |
+
+## Executable scenario
+
+| Number | Source and rationale |
+| --- | --- |
+| 10 input events, E1–E10 | The complete required stream, in arrival order. Omitting or halving it would change the requested exercise. All amounts, dates and the three-installment split retain the earlier documented values. |
+| 2 accounts, 6 days, 12 close entries | Close both specified accounts once on every day. Closes follow E2, E3, E4, E6, E8 and E10; halving the count would leave an account or a day unclosed. |
+| 3 reassessments after E7, E9 and E10 | These are the backdated changes in the prescribed stream. E9 retains the fees while adjusting accruals; E10 revises the prior BHD close. Omitting either would lose an explicit correction checkpoint. |
+| 2 capitalization entries after both Day 6 closes | One per account, as required. Halving the count would omit an account's interest credit. |
+| 0 rejected attempts and 1 accepted anomaly in the summary | Under the chosen authoritative-settlement policy, all ten events are handled. E6 has MISSING_AUTHORIZATION; Auth-B's decline is also a handled outcome. These counts are observed results, not configured limits. |
+| Opening 0.00 AED and 0.000 BHD on each invocation | Imposed account balances. Each run creates fresh state so independent executions reproduce the same entries and final balances. |
+
+## Build versions
+
+| Version | Rationale |
+| --- | --- |
+| Java 21 | The JDK already available in the environment; used as the compilation release. |
+| JUnit 5.10.5 | A version already cached; it allows standard tests without a custom runner. |
+| Maven Resources 3.3.1, Compiler 3.13.0, Surefire 3.5.2 | Versions already cached, pinned so as not to depend on Maven's defaults. |
+| POM 4.0.0 | The Maven format version, not an application parameter. |
+| Project 0.1.0-SNAPSHOT | The initial development identifier. |
+
+The versions identify tools and formats: halving them has no functional
+meaning. The project is verified with Maven 3.6.3, present in the environment.
+
+## Daily interest and capitalization
+
+| Number | Source and rationale |
+| --- | --- |
+| DAILY_RATE = 0.0004 | Exactly the required 0.04% daily rate. Halving it would underpay the required interest. |
+| FINAL_DAY = 6, first day 1, one capitalization per account | The prescribed window and payment count. Halving the window would omit three required days; splitting the payment would violate the single-credit rule. |
+| Zero interest on balances at or below 0 | The required positive-balance threshold. Zero accruals remain explicit daily facts; a zero total still finalizes the window. |
+| 0.10, 0.09, 0.25, 0.09, 0.08, 0.08 AED; total 0.69 | Final rounded accruals on the revised balances 250, 225, 625, 235, 210, 210. These are derived from the stream, including retained fees. |
+| 0.000 on days 1–4 and 0.004 on days 5–6 BHD; total 0.008 | E10 earns interest on two value days despite arriving on Day 6. Halving the day count would miss its backdated effect. |
+| Final AED 210.69 and BHD 10.008 | Pre-capitalization balances plus their exact rounded daily sums. No other rounding or remainder adjustment applies. |
+| 0.10, 0.00, 0.00, 0.00 AED after E7 | Revised days 1–4 before the Day 5 close. Day 3's balance of 5 produces 0.002, which rounds to 0.00; the earlier 0.10 Day 2 snapshot stays queryable. |
+| 12.50, 37.50 AED; 1.250, 3.750 BHD | Reuse the multiplication tie fixtures. Daily results are zero or two minor units with HALF_EVEN; halving the inputs removes the tie. |
+| Six times 0.02 AED = 0.12; six times 0.002 BHD = 0.012 | Constant balances 37.50 / 3.750 finish at 37.62 / 3.762. Rounding the unrounded six-day totals instead would produce 0.09 / 0.009, so this detects an incorrect order of rounding. |
+| 250.00 ledger and full 250.00 hold; extra 0.01 authorization | Reuse the scenario's opening-day close. The 0.10 accrual is earned despite zero availability, but cannot fund the smallest AED hold. Halving the hold would no longer reserve the full balance. |
+| 100.00 credit, late -110.00 on Day 2 and +100.00 on Day 3 | Produces daily interest 0.04, 0.00, 0.03: the 25 fee leaves Day 3 at 65. Halving the 110 debit would remove the overdraft; charging that fee on Day 1 would incorrectly change its accrual. |
+| Late +250.00 on Day 5; capitalization 0.80 | Four days at 250 earn 0.40, then two days at 500 earn 0.40. Detects stale capitalization after the six closes. Halving the credit would change the expected correction. |
+| Day 7 future posting; unrelated BHD 10.000 | Reuse existing amounts to verify that only postings affecting the same account within the six-day window invalidate its accrued set. Day 7 is the first excluded day; halving it would place it inside the window. |
+| 0.60 on unchanged AED 250.00; +250.00 after capitalization | Six exact 0.10 accruals. A later posting cannot change an identical retry or reopen the finalized set. |
+| 0.10 AED versus 0.100 BHD, days 0 and -1, cutoff last + 1 | Reuse existing boundary values to test currency validation, invalid accrual dates and invalid historical cutoffs. These isolate invalid categories; halving them adds no distinct property. |
+
+## Acceptance audit calculations
+
+These were verified by counterfactual replay, not implemented as new policies.
+
+| Number | Source and rationale |
+| --- | --- |
+| AED -395.00 | Day 2 as actually known at the Day 5 close: pre-fee -370 minus its 25 fee. Separates the qualified first criterion from an inclusive closing balance. |
+| AED -155.00 before fees on days 4 and 5 if E6 is rejected | 250 + 400 - 185 - 620. Days 2, 4 and 5 still require fees; refusing E6 does not reduce the count to one. |
+| AED 390.00 + 0.93 = 390.93 | Reject E6 and retain the three fees: revised balances 250, 225, 625, 415, 390, 390 yield daily accruals 0.10, 0.09, 0.25, 0.17, 0.16, 0.16. These are derived outcomes, not tunable constants. |
+| AED 465.00 + 1.03 = 466.03 | Reject E6 and add three 25 fee refunds at their original value days after E9. Revised balances 250, 250, 650, 465, 465, 465 yield daily accruals 0.10, 0.10, 0.26, 0.19, 0.19, 0.19. All original fee records remain. Halving refunds would leave fees partially charged. |
