@@ -1,85 +1,228 @@
-# Account ledger
+# Account Ledger
 
-Implementazione incrementale di un ledger in memoria. `Money` gestisce importi
-immutabili in AED e BHD, con somma, sottrazione, cambio di segno e ripartizione
-esatta in rate.
-`Account`, `Posting` e `Journal` aggiungono conti, movimenti e uno storico
-append-only interrogabile per giorno valuta e sequenza conosciuta.
+An in-memory account ledger in **Java 21**, built around an append-only journal.
+It replays six days of credits, debits, card authorizations, settlements and
+backdated corrections across AED and BHD accounts. Earlier views remain
+queryable after later events change the balances.
 
-## Eseguire i test
+The application runs locally with no web layer, database, persistence or runtime
+libraries beyond the JDK. Each execution starts with fresh state.
 
-Servono Java 21 e Maven. Dalla directory del progetto:
+**Current status:** the ledger core, test suite and executable replay are
+implemented. The command prints a final summary; the required per-day report
+is still to be implemented.
+
+## Quick start
+
+Requires **JDK 21** and **Maven**; verified with Maven 3.6.3. From the repository root:
 
 ```sh
 mvn test
+./run.sh
 ```
 
-Con le dipendenze già in cache è disponibile anche `mvn -o test`.
-Surefire stampa il numero di test, errori e fallimenti; `BUILD SUCCESS` indica
-che la suite è passata. I risultati sono in `target/surefire-reports/`.
+The first command runs the suite and downloads build dependencies if needed.
+`run.sh` compiles offline using that cache, then launches the scenario. On
+subsequent runs, the suite can also run offline with `mvn -o test`.
 
-## Usare Money
+To launch an already compiled build directly:
 
-```java
-var balance = Money.of(CurrencyUnit.AED, "1200.00")
-        .subtract(Money.of(CurrencyUnit.AED, "950.00"));
-// balance.amount() è 250.00; balance.currency() è AED.
+```sh
+java -cp target/classes accountledger.Scenario
 ```
 
-Gli input devono essere rappresentabili esattamente nella valuta: `1.2000` AED
-diventa `1.20`, mentre `1.001` AED genera `ArithmeticException`. Le operazioni
-tra valute diverse generano `IllegalArgumentException`.
+## Expected output
 
-```java
-var installments = Money.of(CurrencyUnit.BHD, "10.000").split(3);
-// Importi: 3.334, 3.333, 3.333. Totale: 10.000 BHD.
+```text
+Final balances after Day 6 capitalization:
+ACC-001: AED 210.69
+ACC-002: BHD 10.008
+ACC-001 Auth-A: SETTLED
+ACC-001 Auth-B: DECLINED
+E6: MISSING_AUTHORIZATION
+Rejected attempts: 0
 ```
 
-`split` restituisce una lista immutabile. Distribuisce le unità minime rimanenti
-alle prime rate, conservando il segno dell'importo. Sono ammessi importi zero
-e negativi, e rate zero quando le unità minime sono meno delle rate richieste.
-Il numero di rate deve essere positivo, altrimenti viene generata
-`IllegalArgumentException`.
+Auth-A has settled and released its hold. Auth-B was declined when it was
+requested; E9 does not change that decision. E6 is an accepted settlement with
+a diagnostic under the chosen policy, so it does not count as a rejected attempt.
 
-## Registrare e interrogare i movimenti
+The three overdraft fees total **AED 75.00**. Capitalized interest is
+**AED 0.69** and **BHD 0.008**. These values are calculated by the core and
+verified by the tests.
+
+## The six-day scenario
+
+Both accounts open at zero: `ACC-001` in AED and `ACC-002` in BHD.
+[Scenario.java](src/main/java/accountledger/Scenario.java) defines the stream
+used by both the executable and the complete-stream test.
+
+| Processing day | Events, in arrival order |
+| --- | --- |
+| 1 | E1 credits AED 1,200.00; E2 debits AED 950.00. Both have value Day 1. |
+| 2 | E3 requests Auth-A's AED 200.00 hold. |
+| 3 | E4 credits AED 400.00, value Day 3. |
+| 4 | E5 settles Auth-A for AED 185.00; E6 settles unknown Auth-Z for AED 180.00. Both have value Day 4. |
+| 5 | E7 debits AED 620.00, value Day 2; E8 requests Auth-B's AED 90.00 hold. |
+| 6 | E9 reverses E7, value Day 2; E10 credits ACC-002 with BHD 10.000 in three installments, booked and valued on Day 5. |
+
+E1–E9 belong to ACC-001. **E10 arrives after E9**, even though its booked day
+is earlier. The driver preserves that order. Its installments are BHD 3.334,
+3.333 and 3.333, which sum to exactly 10.000.
+
+Both accounts close after each row. Backdated changes trigger explicit
+reassessments after E7, E9 and E10. Capitalization follows both Day 6 closes.
+
+### How the final amounts are obtained
+
+E7 makes Day 2's balance **AED -370.00 before fees**. Reassessment charges
+Day 2 and Day 4; the Day 5 close adds the third fee. After the Day 2 fee,
+Day 3 is still positive at AED 5.00, so it incurs no fee.
+
+E9 reverses the debit and retains the separately assessed fees. The resulting
+balances and revised daily accruals are:
+
+| Day | AED ledger before capitalization | AED interest | BHD ledger before capitalization | BHD interest |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 250.00 | 0.10 | 0.000 | 0.000 |
+| 2 | 225.00 | 0.09 | 0.000 | 0.000 |
+| 3 | 625.00 | 0.25 | 0.000 | 0.000 |
+| 4 | 235.00 | 0.09 | 0.000 | 0.000 |
+| 5 | 210.00 | 0.08 | 10.000 | 0.004 |
+| 6 | 210.00 | 0.08 | 10.000 | 0.004 |
+| **Interest total** | | **0.69** | | **0.008** |
+
+This table uses all ten input events and the fee assessments, before the final
+interest credits. It is a revised view: the original Day 2 AED close was 250.00,
+and the original Day 5 BHD close was 0.000. Both remain queryable using their
+saved journal sequences.
+
+## Rules and policy choices
+
+| Area | Behavior |
+| --- | --- |
+| Money | `BigDecimal` amounts use AED's 2 decimals or BHD's 3. Inputs requiring rounding are rejected; calculations round explicitly. No currency conversion. |
+| Journal | Each accepted request and its immutable effects share one sequence. Validation finishes before anything is appended. Existing records are never changed or deleted. |
+| Authorizations | Available balance is ledger balance minus active holds. Approve only when applying the new hold leaves availability at or above zero. Holds do not change the ledger balance. |
+| Settlements | One final capture per account and authorization reference; release the entire approved hold and debit the actual settled amount. An unknown or declined reference still produces a debit and a diagnostic. |
+| Reversals | Append the opposite of every posting in the referenced event. Preserve authorization decisions and separately assessed fees. Explicit fee refunds require their own compensation. |
+| Overdraft fees | Charge AED 25.00 at most once per account and value day when the closing ledger balance is negative. Reassess closed days chronologically, including the effect of earlier fees. |
+| Interest | Accrue 0.04% daily on positive ledger balances after fees, using `HALF_EVEN` at the account's precision. Accruals stay unspendable until capitalization. |
+| Capitalization | Credit the exact sum of the six rounded daily accruals once, at the end of Day 6. Day 6 earns interest before that credit; no remainder is discarded. |
+
+Accepting unmatched settlements and retaining assessed fees are explicit policy
+choices. The brief permits alternatives. [REJECTED.md](REJECTED.md) distinguishes
+criteria that conflict with the rules from criteria refused under those choices;
+[AMBIGUITIES.md](AMBIGUITIES.md) records the detailed decisions.
+
+## Dates, history and retries
+
+The ledger keeps these concepts separate:
+
+| Term | Meaning |
+| --- | --- |
+| Processing day | When the driver handles a request; stored with rejected attempts. |
+| Booked day | The day declared by the request. It can move backwards as events arrive. |
+| Value day | When a posting affects the ledger balance. |
+| Sequence | The accepted entry's position in the journal, always increasing. |
+
+`balance(accountId, valueDay, knownThroughSequence)` includes postings up to
+both bounds, inclusively. `available` requires the same two bounds; holds apply
+according to the decisions known at that sequence. Save the closing sequence
+to reproduce an original close.
+
+This independent Java example records E1, E2 and a later correction, without
+running daily closes or assessing fees. The statements can be entered in
+`jshell --class-path target/classes` after compilation:
 
 ```java
-var journal = new Journal(
-        new Account("ACC-001", Money.of(CurrencyUnit.AED, "0.00")),
-        new Account("ACC-002", Money.of(CurrencyUnit.BHD, "0.000")));
-journal.append("E1", 1, List.of(new Posting("ACC-001", 1, Money.of(CurrencyUnit.AED, "1200.00"))));
-journal.append("E2", 1, List.of(new Posting("ACC-001", 1, Money.of(CurrencyUnit.AED, "-950.00"))));
-long before = journal.lastSequence();
+import accountledger.*;
+import java.util.List;
+import static accountledger.CurrencyUnit.AED;
+
+var journal = new Journal(new Account("ACC-001", Money.of(AED, "0.00")));
+journal.append("E1", 1, List.of(new Posting("ACC-001", 1, Money.of(AED, "1200.00"))));
+journal.append("E2", 1, List.of(new Posting("ACC-001", 1, Money.of(AED, "-950.00"))));
+long original = journal.lastSequence();
+
 var late = journal.append("E7", 5,
-        List.of(new Posting("ACC-001", 2, Money.of(CurrencyUnit.AED, "-620.00"))));
-
-journal.balance("ACC-001", 2, before);          // 250.00 AED
-journal.balance("ACC-001", 2, late.sequence()); // -370.00 AED, prima delle fee
+        List.of(new Posting("ACC-001", 2, Money.of(AED, "-620.00"))));
+journal.balance("ACC-001", 2, original);        // AED 250.00
+journal.balance("ACC-001", 2, late.sequence()); // AED -370.00
 ```
 
-Negli esempi i tipi applicativi sono nel package `accountledger`; `List` è
-`java.util.List`. La valuta del conto deriva dal saldo iniziale.
+`Journal` owns retry detection. An identical request returns its original
+outcome without recalculation; reusing its ID with different input is rejected.
+Earlier approvals, declines and historical snapshots survive later corrections.
 
-`append` registra un gruppo immutabile di movimenti, con ID dell'evento, giorno
-contabilizzato e sequenza assegnata dal journal. Le rate di E10 entrano insieme
-nello stesso gruppo. Ogni movimento conserva il proprio giorno valuta; le
-sequenze seguono l'ordine di arrivo anche se il giorno contabilizzato arretra.
+`Replay.process(processingDay, request)` returns `false` after recording an
+expected rejection, leaving balances and holds unchanged. Each failed attempt
+remains in an append-only log and does not reserve its event ID. It may succeed
+later if corrected or if a missing prerequisite arrives. Declines and accepted
+diagnostics return `true`.
 
-`balance(accountId, valueDay, knownThroughSequence)` somma al saldo iniziale
-soltanto i movimenti del conto con valuta e sequenza entro i limiti inclusivi
-indicati. La sequenza zero rappresenta il saldo iniziale. `batches()` restituisce
-una copia immutabile dello storico al momento della lettura.
+For historical error reports, save the immutable `replay.rejections()` snapshot
+alongside the journal cutoff: failed attempts do not advance journal sequences.
 
-Una ripetizione identica dello stesso gruppo restituisce la registrazione
-originale. Un ID riutilizzato con dati differenti, un conto sconosciuto o una
-valuta incompatibile generano `IllegalArgumentException` prima di aggiungere
-movimenti. Tutte le operazioni avvengono su un singolo thread.
+## Code map
 
-Il journal registra già movimenti compensativi. Il motore degli eventi aggiungerà
-la validazione dei riferimenti degli storni, le autorizzazioni, gli errori e le
-chiusure giornaliere. Il replay completo e il controesempio volutamente fallente
-restano nelle fasi successive.
+All application code is under [`src/main/java/accountledger`](src/main/java/accountledger).
 
-Le scelte sono raccolte in [AMBIGUITIES.md](AMBIGUITIES.md), i numeri in
-[NUMBERS.md](NUMBERS.md), i criteri rifiutati in [REJECTED.md](REJECTED.md)
-e le attività effettive in [WORKLOG.md](WORKLOG.md).
+| Component | Responsibility |
+| --- | --- |
+| [Scenario](src/main/java/accountledger/Scenario.java) | Executable stream, explicit closes and final summary. |
+| [Replay](src/main/java/accountledger/Replay.java) | Dispatch requests and record expected rejections. |
+| [Journal](src/main/java/accountledger/Journal.java) | Atomic append, shared retry detection and historical queries. |
+| [Money](src/main/java/accountledger/Money.java) | Currency precision, exact arithmetic, rounding and installment splitting. |
+| [Authorizations](src/main/java/accountledger/Authorizations.java) | Availability, approval decisions and active hold state. |
+| [Settlements](src/main/java/accountledger/Settlements.java) | Final debits, hold release and settlement diagnostics. |
+| [Reversals](src/main/java/accountledger/Reversals.java) | Reference validation and compensating postings. |
+| [DailyClosing](src/main/java/accountledger/DailyClosing.java) | Daily close markers, fee assessment and updated accruals. |
+| [Interest](src/main/java/accountledger/Interest.java) | Rounded daily accruals and final capitalization. |
+
+A `Request` is the original input. A `Posting` is a signed monetary movement.
+A `Journal.Entry` groups the request with its effects: postings, authorization
+states, diagnostics and accruals. One entry can contain several postings, as E10 does.
+
+## Tests and the deliberate counterexample
+
+The ordinary suite covers decimal precision, atomic writes, retries, historical
+views, holds, settlements, reversals, fees, interest and rejected attempts.
+[DailyClosingTest](src/test/java/accountledger/DailyClosingTest.java) checks the
+complete scenario's financial results;
+[ScenarioTest](src/test/java/accountledger/ScenarioTest.java) checks arrival order
+and closing boundaries. Maven prints the test results and stores reports in
+`target/surefire-reports/`.
+
+One required test deliberately challenges the chosen fee-retention policy.
+Run it separately:
+
+```sh
+mvn -o -Dtest=FeeTimingCounterexample test
+```
+
+**Expected result: one assertion failure and a nonzero exit.** Reversing before
+close leaves AED 0.00; reversing after close leaves AED -25.00 because the
+assessed fee is retained. This exposes the policy's dependence on timing.
+[FeeTimingCounterexample.java](src/test/java/accountledger/FeeTimingCounterexample.java)
+explains it inline. Its class name excludes it from the default test selection;
+it is not disabled.
+
+## Scope and documentation
+
+The core is designed for a single-threaded replay of one six-day window.
+Holds have no automatic expiry, settlements are final, and reversals are full.
+A negative BHD close is rejected because no BHD overdraft fee was specified.
+Capitalization freezes accruals; reopening finalized interest requires a future
+explicit policy.
+
+Replay accepts already constructed, typed requests. Construction failures happen
+before this API receives the input. It catches `RequestRejectedException` only;
+other exceptions propagate.
+
+| Document | Contents |
+| --- | --- |
+| [AMBIGUITIES.md](AMBIGUITIES.md) | Unspecified behavior and the decisions applied. |
+| [NUMBERS.md](NUMBERS.md) | Constants, fixture values and their rationale. |
+| [REJECTED.md](REJECTED.md) | Refused criteria, policy alternatives and approaches replaced during development. |
+| [WORKLOG.md](WORKLOG.md) | Timestamped implementation and verification history. |
