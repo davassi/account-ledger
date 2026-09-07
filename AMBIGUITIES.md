@@ -15,13 +15,29 @@
 | Numero di rate e rate zero | Richiedere un conteggio positivo. Ammettere rate zero quando le unità minime disponibili sono meno delle rate richieste. |
 | Modificabilità delle rate | Restituire una lista immutabile di Money; una ripartizione calcolata conserva il suo totale. |
 
+## Applicate nello storico
+
+| Ambiguità | Decisione |
+| --- | --- |
+| Valuta e saldo iniziale del conto | Account conserva ID e Money iniziale; la valuta è già contenuta in Money. Le definizioni dei conti sono fissate alla costruzione del journal. |
+| Un evento con più movimenti | Un unico gruppo Journal.Batch conserva ID, giorno contabilizzato e movimenti. Una sola sequenza rende visibili insieme tutte le rate. |
+| E10 arriva dopo E9 ma dichiara Giorno 5 | Conservare sequenza di registrazione, giorno contabilizzato e giorno valuta separatamente. Non imporre ordine crescente al giorno contabilizzato. |
+| Saldo storico | La query specifica giorno valuta e sequenza massima conosciuta, entrambi inclusivi. Il saldo iniziale è incluso una volta sola; le viste storiche restano interrogabili dopo nuovi inserimenti. |
+| Limiti temporali | Giorni interi positivi, senza fissare sei nel core. La sequenza zero precede la prima registrazione; cutoff negativi o oltre l'ultima registrazione sono rifiutati. |
+| Valuta futura | Ammessa anche dopo il giorno contabilizzato: il movimento incide soltanto dal proprio giorno valuta. |
+| Duplicati nel journal | Stesso ID, giorno contabilizzato e lista ordinata di movimenti: restituire il gruppo originale. Dati differenti con lo stesso ID: errore. La deduplicazione degli input completi sarà compito del motore degli eventi. |
+| Concorrenza e atomicità | Un solo thread. Validare e copiare tutti i movimenti prima di aggiungere il gruppo. Un errore non aggiunge movimenti e non consuma sequenze. |
+| Lettura dello storico | Restituire copie immutabili, anche delle liste interne; modifiche alle collezioni del chiamante non alterano conti o registrazioni. |
+| Gruppo senza movimenti | Ammesso: registra i metadati e avanza la sequenza senza cambiare il saldo. Decisioni ed errori dettagliati saranno aggiunti con il motore degli eventi. |
+| Rifiuti tecnici | Il journal solleva eccezioni prima della registrazione. Il motore aggiungerà la registrazione degli esiti e dei diagnostici. |
+| Movimenti compensativi | Ammessi come altri Posting con segno opposto. Risolvere e validare il riferimento a un evento originale appartiene al futuro motore degli storni. |
+
 ## Decisioni di lavoro per i componenti successivi
 
 | Ambiguità | Decisione |
 | --- | --- |
-| E10 arriva dopo E9 ma dichiara Giorno 5 | Conservare ordine di registrazione, giorno contabilizzato e giorno valuta separatamente. |
 | Chiusura giornaliera | Il runner fornirà chiusure esplicite dopo E2, E3, E4, E6, E8 ed E10, rispettivamente per i giorni 1–6. |
-| Saldo storico | Ogni query specificherà giorno valuta e sequenza massima conosciuta. Un report distinguerà chiusure originali e revisioni. |
+| Report storico | Distinguere le chiusure originali dalle revisioni, indicando il limite di conoscenza usato nella query. |
 | Fee su movimenti retrodatati | Riesaminare i giorni già chiusi, dalla valuta dell'evento in avanti, in ordine cronologico. Il giorno corrente si valuta alla chiusura. |
 | Data delle fee storiche | Registrarle quando scoperte, con valuta del giorno riesaminato. La fee di un giorno influisce sui saldi successivi. |
 | Fee dopo uno storno | Conservare gli addebiti già applicati; eventuali rimborsi sono movimenti compensativi distinti. Append-only non impedisce tali rimborsi. |
@@ -35,7 +51,5 @@
 | Interesse retrodatato | Rettificare gli accrual giornalieri mediante nuovi fatti; mantenere tali accrual fuori dal saldo spendibile fino alla capitalizzazione. |
 | Base dell'interesse | Saldo aggiornato dopo le fee, positivo soltanto. L'interesse del Giorno 6 è calcolato prima della capitalizzazione della finestra. |
 | Totale capitalizzato | Somma esatta dei sei accrual giornalieri arrotondati e rettificati; un solo accredito per conto e finestra. |
-| Duplicati | Stesso ID e stesso contenuto: nessun secondo effetto finanziario. Contenuto diverso con lo stesso ID: errore. |
-| Concorrenza e atomicità | Replay su un solo thread; registrare insieme tutti i fatti prodotti da un input valido. |
 | Fee in BHD | Importo non specificato e non necessario alla traccia. Un conto BHD negativo richiede una politica esplicita; non inventare un cambio o una fee BHD 25. |
 | Test volutamente fallente | Aggiungere un controesempio eseguibile separatamente sulla dipendenza delle fee dal momento dello storno, quando quella politica sarà implementata. |

@@ -1,9 +1,10 @@
 # Criteri rifiutati
 
-Le conclusioni seguenti derivano dall'analisi della traccia. Il componente
-attualmente implementato è Money, inclusa la ripartizione esatta in rate; le
-regole temporali saranno verificate nei componenti successivi. Il caso E10 è
-coperto da MoneySplitTest per la conservazione del totale.
+Le conclusioni seguenti derivano dall'analisi della traccia. Sono implementati
+Money, ripartizione in rate, conti e journal. MoneySplitTest verifica la
+conservazione del totale di E10; JournalTest verifica retrodatazioni, viste
+storiche e contabilizzazione atomica delle rate. Commissioni, interessi e
+autorizzazioni saranno verificati nei componenti successivi.
 
 | Criterio | Motivo del rifiuto |
 | --- | --- |
@@ -18,8 +19,10 @@ coperto da MoneySplitTest per la conservazione del totale.
 | 4 — Rifiutare ogni regolamento senza autorizzazione | La politica scelta considera il regolamento autorevole: E6 addebita 180.00 e registra un'anomalia. La politica opposta sarebbe coerente con le sole regole non negoziabili; il criterio non è universalmente falso. |
 | 6 — E9 ripristina automaticamente saldi e fee | La politica scelta conserva le fee. E9 compensa soltanto i 620.00 di E7. Una politica di rimborso potrebbe ripristinare i valori economici aggiungendo nuovi movimenti, senza violare append-only. |
 
-I criteri 1, 3 e 5 sono accettati. Il criterio 5 è condizionale: nella traccia
-Auth-B risulta rifiutata, quindi un test separato dovrà esercitare il caso approvato.
+I criteri 1, 3 e 5 sono accettati. Il criterio 1 è ora verificato tramite la query
+del saldo al Giorno 2 dopo E7, prima delle fee. Il criterio 5 è condizionale:
+nella traccia Auth-B risulta rifiutata, quindi un test separato dovrà esercitare
+il caso approvato.
 
 ## Approcci abbandonati durante l'implementazione
 

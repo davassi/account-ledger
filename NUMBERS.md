@@ -28,6 +28,20 @@
 | 0 e -1 rate | Primo conteggio non valido e un conteggio negativo: entrambi rifiutati. |
 | 92233720368547758.08 AED | Sono 2^63 unità minime, appena oltre il massimo di long. Verifica che la ripartizione mantenga la precisione BigInteger; dimezzarlo nasconderebbe quel limite. |
 
+## Storico e saldi
+
+| Numero | Origine e motivazione |
+| --- | --- |
+| Giorno minimo 1 | La traccia parte dal Giorno 1. Il core accetta giorni interi positivi; la finestra di sei giorni appartiene al runner. |
+| Sequenza 0 | Prefisso senza registrazioni, con il solo saldo iniziale. |
+| Prima sequenza 1, incremento 1 | Ogni gruppo accettato occupa una posizione intera nello storico, indipendentemente dal numero di movimenti. Ripetizioni identiche e gruppi rifiutati non consumano una posizione. |
+| Saldi iniziali 0.00 AED e 0.000 BHD | Imposti per ACC-001 e ACC-002. Il test sintetico con saldo iniziale 1200.00 verifica che un saldo non nullo venga incluso una volta sola. |
+| 400.00, 250.00, -370.00, 30.00, 650.00 | 400.00 proviene da E4; gli altri valori derivano da E1, E2, E4, E7 ed E9, prima delle commissioni. Verificano separatamente valuta e conoscenza. |
+| Giorni contabilizzati 5, 6, 5 | Ordine di E7, E9 ed E10: dimostra che il giorno contabilizzato non ordina lo storico. |
+| 400.00 con contabilizzazione 1 e valuta 3 | Caso sintetico di valuta futura: l'importo entra nel saldo soltanto dal Giorno 3. |
+| 0 e -1 come giorni, -1 e 1 come cutoff di un journal vuoto | Verificano limiti invalidi: i giorni devono essere positivi e il cutoff deve identificare un prefisso esistente. |
+| 10 nel test di rifiuto atomico | Importo rappresentabile in entrambe le valute; isola errori di conto o valuta da errori di precisione. Dimezzarlo non cambierebbe la proprietà verificata. |
+
 ## Versioni di build
 
 | Versione | Motivazione |
