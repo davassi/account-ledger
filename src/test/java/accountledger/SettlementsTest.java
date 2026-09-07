@@ -6,7 +6,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
-import org.junit.jupiter.params.provider.ValueSource;
 
 import static accountledger.Authorization.Status.APPROVED;
 import static accountledger.Authorization.Status.DECLINED;
@@ -14,7 +13,6 @@ import static accountledger.Authorization.Status.SETTLED;
 import static accountledger.CurrencyUnit.AED;
 import static accountledger.CurrencyUnit.BHD;
 import static accountledger.Diagnostic.DECLINED_AUTHORIZATION;
-import static accountledger.Diagnostic.MISSING_AUTHORIZATION;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -55,16 +53,17 @@ class SettlementsTest {
     }
 
     @Test
-    void unmatchedAuthZPostsItsDebitAndRecordsTheAnomaly() {
+    void unmatchedAuthZIsRejectedWithoutChangingBalancesOrHistory() {
         settlements.settle("E5", 4, "ACC-001", "Auth-A", Money.of(AED, "185.00"), 4);
-        var before = authorizations.states(journal.lastSequence());
-        var entry = settlements.settle("E6", 4, "ACC-001", "Auth-Z", Money.of(AED, "180.00"), 4);
+        var before = journal.entries();
 
-        assertEquals(List.of(MISSING_AUTHORIZATION), entry.diagnostics());
-        assertEquals(List.of(), entry.authorizations());
-        assertEquals(before, authorizations.states(entry.sequence()));
-        assertEquals(Money.of(AED, "285.00"), authorizations.available("ACC-001", 4, entry.sequence()));
-        assertThrows(UnsupportedOperationException.class, () -> entry.diagnostics().clear());
+        var error = assertThrows(RequestRejectedException.class,
+                () -> settlements.settle("E6", 4, "ACC-001", "Auth-Z", Money.of(AED, "180.00"), 4));
+
+        assertEquals("Unknown authorization: Auth-Z", error.getMessage());
+        assertEquals(before, journal.entries());
+        assertEquals(Money.of(AED, "465.00"), journal.balance("ACC-001", 4, journal.lastSequence()));
+        assertEquals(Money.of(AED, "465.00"), authorizations.available("ACC-001", 4, journal.lastSequence()));
     }
 
     @Test
@@ -117,6 +116,11 @@ class SettlementsTest {
     @Test
     void referencesAndHoldReleaseAreScopedToTheAccount() {
         journal.append("BHD-FUND", 3, List.of(new Posting("ACC-002", 3, Money.of(BHD, "10.000"))));
+        var before = journal.entries();
+        assertThrows(RequestRejectedException.class,
+                () -> settlements.settle("BHD-SETTLE", 4, "ACC-002", "Auth-A", Money.of(BHD, "3.334"), 4));
+        assertEquals(before, journal.entries());
+
         authorizations.authorize("BHD-HOLD", 3, "ACC-002", "Auth-A", Money.of(BHD, "10.000"));
         var entry = settlements.settle("BHD-SETTLE", 4, "ACC-002", "Auth-A", Money.of(BHD, "3.334"), 4);
 
@@ -128,8 +132,10 @@ class SettlementsTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"Auth-A", "Auth-Z"})
-    void aReferenceCannotBeSettledTwiceOrReusedForANewHold(String authId) {
+    @CsvSource({"200.00, APPROVED", "620.00, DECLINED"})
+    void aReferenceCannotBeSettledTwiceOrReusedForANewHold(String amount, Authorization.Status status) {
+        var authId = "Another";
+        assertEquals(status, authorizations.authorize("HOLD", 4, "ACC-001", authId, Money.of(AED, amount)).status());
         var entry = settlements.settle("FIRST", 4, "ACC-001", authId, Money.of(AED, "185.00"), 4);
         var before = journal.entries();
 
@@ -168,11 +174,11 @@ class SettlementsTest {
 
     @Test
     void diagnosticCollectionsAreCopiedBeforeRecording() {
-        var diagnostics = new ArrayList<>(List.of(MISSING_AUTHORIZATION));
+        var diagnostics = new ArrayList<>(List.of(DECLINED_AUTHORIZATION));
         var effects = new Journal.Effects(List.of(), List.of(), diagnostics);
         diagnostics.clear();
 
-        assertEquals(List.of(MISSING_AUTHORIZATION), effects.diagnostics());
+        assertEquals(List.of(DECLINED_AUTHORIZATION), effects.diagnostics());
         assertThrows(UnsupportedOperationException.class, () -> effects.diagnostics().clear());
         assertThrows(UnsupportedOperationException.class, () -> authorizations.states(journal.lastSequence()).clear());
         assertEquals(List.of(), authorizations.states(0));

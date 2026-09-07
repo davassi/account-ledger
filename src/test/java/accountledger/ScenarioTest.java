@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 
+import static accountledger.CurrencyUnit.AED;
 import static accountledger.CurrencyUnit.BHD;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -16,7 +17,11 @@ class ScenarioTest {
         var journal = scenario.journal();
         long cutoff = journal.lastSequence();
         var eventIds = IntStream.rangeClosed(1, 10).mapToObj(number -> "E" + number).toList();
-        assertEquals(eventIds, journal.entries().stream().map(Journal.Entry::eventId).filter(eventIds::contains).toList());
+        assertEquals(eventIds.stream().filter(id -> !id.equals("E6")).toList(),
+                journal.entries().stream().map(Journal.Entry::eventId).filter(eventIds::contains).toList());
+        assertEquals(List.of(new Rejection(4, new Request("E6", 4,
+                        new Request.Settlement("ACC-001", "Auth-Z", Money.of(AED, "180.00"), 4)),
+                "Unknown authorization: Auth-Z")), scenario.rejections());
 
         var e9 = journal.find("E9", cutoff).orElseThrow();
         var e10 = journal.find("E10", cutoff).orElseThrow();
@@ -26,7 +31,7 @@ class ScenarioTest {
                 new Posting("ACC-002", 5, Money.of(BHD, "3.333")),
                 new Posting("ACC-002", 5, Money.of(BHD, "3.333"))), e10.postings());
 
-        var lastEvents = List.of("E2", "E3", "E4", "E6", "E8", "E10");
+        var lastEvents = List.of("E2", "E3", "E4", "E5", "E8", "E10");
         IntStream.rangeClosed(1, 6).forEach(day -> {
             var lastEvent = journal.find(lastEvents.get(day - 1), cutoff).orElseThrow();
             List.of("ACC-001", "ACC-002").forEach(account -> {
@@ -53,6 +58,6 @@ class ScenarioTest {
         second.run();
 
         assertEquals(first.journal().entries(), second.journal().entries());
-        assertEquals(List.of(), second.rejections());
+        assertEquals(first.rejections(), second.rejections());
     }
 }

@@ -5,10 +5,10 @@ of the current implementation. A test that confirms our chosen policy does not
 prove that the policy satisfies the requirement.
 
 **Audit correction:** the earlier refusal of criterion 4 was not justified.
-It is a valid requirement, and the current settlement implementation violates it.
+It is a valid requirement, and the settlement implementation now satisfies it.
 Criterion 6 also cannot be refused solely because the ledger is append-only:
 compensating credits can restore net fees without deleting their assessments.
-This audit updates the assessment; it does not change the settlement or refund code.
+Its refund interpretation remains open; the current code retains assessed fees.
 
 ## Verdict on every criterion
 
@@ -17,7 +17,7 @@ This audit updates the assessment; it does not change the settlement or refund c
 | 1 | Day 2 balance at end-of-Day-5 knowledge, before fees, is AED -370.00. | **Accept**, with the explicit pre-fee qualification. |
 | 2 | E7 causes exactly one overdraft fee, on Day 2. | **Refuse:** there are three assessments, for value days 2, 4 and 5. |
 | 3 | The Day 4 settlement of Auth-A must be accepted. | **Accept.** |
-| 4 | A settlement with an authorization ID absent from the ledger must be rejected without a debit. | **Accept; current implementation does not comply.** |
+| 4 | A settlement with an authorization ID absent from the ledger must be rejected without a debit. | **Accept; implemented and tested.** |
 | 5 | If Auth-B is approved, its hold reduces availability but not ledger balance. | **Accept:** conditional statement; Auth-B is declined in this stream. |
 | 6 | After E9, all balances and fees return to pre-E7 values. | **Needs a precise meaning:** possible for net economic values through compensations, impossible for erasing recorded history. The current fee-retention policy does not meet the net-refund reading. |
 | 7 | E10's three installments must each be BHD 3.334. | **Refuse:** they would total BHD 10.002. |
@@ -59,7 +59,7 @@ The limit is once **per account and day**, not once per triggering event.
 Process the affected days chronologically because an earlier fee changes later
 closing balances.
 
-| Value day | Before all fees, current code accepts E6 | Before all fees, criterion 4 rejects E6 | Assessment |
+| Value day | Before all fees, earlier policy debited E6 | Before all fees, current policy rejects E6 | Assessment |
 | --- | ---: | ---: | --- |
 | 2 | -370.00 | -370.00 | AED 25.00 |
 | 3 | 30.00 | 30.00 | None: the Day 2 fee leaves +5.00. |
@@ -89,15 +89,20 @@ non-negotiable rules. The brief does not state that a settlement is an
 irrevocable external debit that must be honored despite a missing authorization.
 There is no sufficient basis for refusing this criterion.
 
-The current [Settlements](src/main/java/accountledger/Settlements.java) code
-instead debits E6 and records MISSING_AUTHORIZATION. The test
-`unmatchedAuthZPostsItsDebitAndRecordsTheAnomaly` explicitly expects that behavior.
-Both encode our earlier choice; they do not establish the criterion as wrong.
+[Settlements](src/main/java/accountledger/Settlements.java) now rejects a
+reference absent from the requested account's authorization history. Replay
+records E6's failure on Day 4; no monetary posting or accepted entry is created.
+The ledger and available balance remain AED 465.00 after E5 and rejected E6.
 
-**Required correction:** reject E6 through the existing rejection mechanism,
-with no monetary posting. Update the settlement tests, scenario assertions,
-expected output and dependent numbers. Criterion 4 says nothing about a
-*declined but present* authorization; that remains a separate policy decision.
+The tests verify unchanged history, account-scoped lookup, the scenario's sole
+rejection and retry after a missing authorization arrives. Rejection reserves
+neither the event ID nor the authorization reference. Accepted retries still
+use Journal's single request comparison.
+
+The earlier test expected an unmatched debit and MISSING_AUTHORIZATION; it
+encoded our mistaken policy and was replaced. Criterion 4 says nothing about a
+*declined but present* authorization; the separately documented policy still
+accepts that debit with DECLINED_AUTHORIZATION.
 
 ## 5 — Accept the conditional hold rule
 
@@ -156,20 +161,21 @@ ties: six AED accruals of 0.02 total 0.12, whereas rounding their six unrounded
 products together would give 0.09. The latter calculation cannot replace the
 required sum. Equivalent BHD fixtures verify the three-decimal case.
 
-## Numerical impact of the open policy issues
+## Numerical impact of the correction and refund choice
 
 These are distinct outcomes, not three interchangeable expected outputs:
 
 | Behavior | AED balance before capitalization | Rounded AED interest | Final AED balance |
 | --- | ---: | ---: | ---: |
-| Current code: debit E6, retain fees | 210.00 | 0.69 | 210.69 |
-| Reject E6, retain fees | 390.00 | 0.93 | 390.93 |
+| Abandoned policy: debit E6, retain fees | 210.00 | 0.69 | 210.69 |
+| Current code: reject E6, retain fees | 390.00 | 0.93 | 390.93 |
 | Reject E6, compensate the three fees at their original value days | 465.00 | 1.03 | 466.03 |
 
-The audit verified the latter two as **counterfactual replays**, omitting E6's
-financial effects and optionally adding fee credits after E9. They are not
-implemented behavior. Both keep the original fee facts. BHD ends at 10.008 in
-all three cases. The missing-authorization rule alone changes the AED result;
+The audit initially verified the latter two as counterfactual replays. The
+ordinary suite and executable now verify **AED 390.93** in the implementation.
+The fee-compensation row remains a counterfactual, with credits at the three
+original value days after E9. Both alternatives keep the original fee facts.
+BHD ends at 10.008 in all three cases. Rejecting E6 changes the AED result;
 the fee-refund interpretation changes it again.
 
 ## Deliberately failing test
@@ -186,9 +192,9 @@ Expected AED 0.00, actual AED -25.00. Both paths cancel the same debit, but a fe
 assessed before reversal remains charged. Its inline comment explains that
 limitation. The test runs separately by name and is not disabled.
 
-The ordinary suite passed **176 tests** during the same audit. Its success
-confirms the implemented behavior; it does not establish compliance with
-criterion 4 or resolve criterion 6.
+The ordinary suite now passes **178 tests**, including the criterion 4
+correction. This verifies the implemented behavior; it does not resolve the
+fee-refund interpretation of criterion 6.
 
 ## Deliverable audit
 
@@ -197,16 +203,16 @@ criterion 4 or resolve criterion 6.
 | Git history, no squashing | The local history and reflog showed 18 incremental commits at the start of this review, including a separate corrective commit. Preserve them when publishing. |
 | README | Contains runnable commands, observed final output and an explicit statement that the per-day report is unfinished. |
 | NUMBERS.md | Documents fee, rate, precision, window, build versions and fixture rationale. A check found all numeric string-literal magnitudes in the Java sources represented, normalizing signs and trailing zeros; this is a coverage aid, not proof of every rationale. |
-| AMBIGUITIES.md | Substantial decisions are present. This audit marks the missing-authorization choice as non-compliant and the refund interpretation as unresolved. |
+| AMBIGUITIES.md | Substantial decisions are present. The missing-authorization policy is corrected; the refund interpretation remains unresolved. |
 | REJECTED.md | This review covers all eight criteria and retains the actual abandoned approaches below. |
 | Annotated failing test | Present and verified separately as described above. |
 | WORKLOG.md | Contains timestamped activity records; this audit adds an entry using the observed UTC clock and actual checks. |
 | Per-day output from the original Build requirement | **Missing.** Scenario prints a final summary, not daily closing balances, fee assessments, authorization states and errors. |
 | GitHub repository | **Not verified.** No Git remote is configured locally. A local commit history does not demonstrate GitHub publication. |
 
-The repository is **not ready for acceptance**: criterion 4 needs a code
-correction, criterion 6 needs a precise refund interpretation, the per-day
-report is unfinished, and GitHub publication remains unverified.
+The repository is **not ready for acceptance**: criterion 6 needs a precise
+refund interpretation, the per-day report is unfinished, and GitHub publication
+remains unverified. Criterion 4 is corrected.
 
 ## Approaches abandoned during implementation
 
@@ -241,6 +247,9 @@ and numerical verification as the command-line runner is introduced.
 
 The earlier acceptance analysis treated a compatible settlement requirement as
 optional merely because the non-negotiable rules did not specify that behavior.
-This audit withdraws that reasoning. A chosen policy that contradicts a valid
+The audit withdrew that reasoning. A chosen policy that contradicts a valid
 acceptance criterion is a compliance gap to fix, not a reason to call the
-criterion wrong. The associated code has not yet been changed.
+criterion wrong. The implementation now rejects missing references through
+the existing Replay boundary. The obsolete MISSING_AUTHORIZATION diagnostic
+and the redundant authorization-ID reservation check were removed; no new
+retry mechanism or separate settlement state was introduced.

@@ -6,7 +6,6 @@ import java.util.Objects;
 import static accountledger.Authorization.Status.DECLINED;
 import static accountledger.Authorization.Status.SETTLED;
 import static accountledger.Diagnostic.DECLINED_AUTHORIZATION;
-import static accountledger.Diagnostic.MISSING_AUTHORIZATION;
 
 /** Posts final settlements and releases approved holds through new journal entries. */
 public final class Settlements {
@@ -22,9 +21,10 @@ public final class Settlements {
      * Debits the positive amount at its value day and releases the entire approved
      * hold at the recording sequence. Available funds do not limit a settlement.
      *
-     * <p>A missing or declined authorization still produces a debit, with a
-     * diagnostic. One final settlement is allowed per account and authorization
-     * reference; identical event retries return their original entry.
+     * <p>A missing authorization is rejected without changing the journal. A
+     * declined but recorded authorization produces a debit with a diagnostic.
+     * One final settlement is allowed per account and authorization reference;
+     * identical event retries return their original entry.
      */
     public Journal.Entry settle(String eventId, int bookedDay, String accountId, String authorizationId,
                                 Money amount, int valueDay) {
@@ -33,11 +33,8 @@ public final class Settlements {
         return journal.append(request, () -> {
             long cutoff = journal.lastSequence();
             var postings = List.of(prepareDebit(settlement, cutoff));
-            var original = authorizations.find(accountId, authorizationId, cutoff);
-            if (original.isEmpty()) {
-                return new Journal.Effects(postings, List.of(), List.of(MISSING_AUTHORIZATION));
-            }
-            var authorization = original.get();
+            var authorization = authorizations.find(accountId, authorizationId, cutoff)
+                    .orElseThrow(() -> new RequestRejectedException("Unknown authorization: " + authorizationId));
             if (authorization.status() == DECLINED) {
                 return new Journal.Effects(postings, List.of(), List.of(DECLINED_AUTHORIZATION));
             }

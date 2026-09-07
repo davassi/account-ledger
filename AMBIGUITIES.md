@@ -1,11 +1,10 @@
 # Ambiguities and decisions
 
-Acceptance review correction: criterion 4 is a valid settlement requirement,
-not an ambiguity that permits us to debit E6. The implemented policy below
-is a known compliance gap. Criterion 6 can describe net fee restoration via
-append-only credits, so fee retention is not forced by the journal model.
-See [REJECTED.md](REJECTED.md) for the complete audit; implementation changes
-remain outstanding.
+Acceptance review correction: criterion 4 is a valid settlement requirement.
+The implementation now rejects E6 without a debit. Criterion 6 can describe
+net fee restoration via append-only credits, so fee retention is not forced
+by the journal model. Its refund interpretation remains open; the current
+code retains assessed fees. See [REJECTED.md](REJECTED.md) for the complete audit.
 
 ## Applied in the Money component
 
@@ -51,7 +50,7 @@ remain outstanding.
 | Authorization timing | The API takes the current processing day, supplied by the caller. A hold starts at its recording sequence and is not backdated by a monetary value day. The event engine will carry the full input metadata. |
 | Available balance query | Require the value day and an explicit knowledge cutoff. Both ledger postings and hold decisions use the same prefix. The value day filters monetary postings; holds take effect at their recording sequence. |
 | Original closes versus later knowledge | Use the sequence saved at a daily close to reconstruct its available balance and decisions. An earlier value day combined with a later cutoff uses the holds known at that later prefix; it is not the original close. No authorization outcome is recalculated. |
-| Authorization identity | The ID is unique within its account, including after a decline or settlement. A settlement consumes even a previously unknown reference, preventing a later new hold with that ID. Different accounts can use the same ID. |
+| Authorization identity | The ID is unique within its account, including after a decline or settlement. Rejecting a settlement for an unknown reference does not reserve that reference; a later authorization may introduce it. Different accounts can use the same ID. |
 | Repeated authorization event | The same event ID, day, account, authorization ID and amount return the stored outcome without reevaluation or another entry. Different data conflict. |
 | Decision storage | Journal.Entry keeps the original Request and immutable Effects containing postings, authorization states, diagnostics and accruals. Read holds from that history; maintain no second store of decisions or balances. |
 | Scope of the journal | Own retry detection and validate accounts, currencies and immutable effects before append. The operation supplies a calculation that runs only for new input and must not mutate the journal. |
@@ -62,15 +61,16 @@ remain outstanding.
 
 | Ambiguity | Decision |
 | --- | --- |
-| Settlement without authorization | Current behavior charges it and records MISSING_AUTHORIZATION. Audit finding: criterion 4 explicitly requires rejection with no debit and is compatible with the other rules. Our earlier policy is a compliance gap; the implementation and dependent expectations need correction. |
-| Settlement after a decline | Apply the same authoritative-posting policy, with DECLINED_AUTHORIZATION. The declined state remains unchanged and other holds remain active. |
-| Final versus partial settlement | Treat each settlement as final and allow one per account and authorization reference, including previously unknown references. Partial captures are outside this increment; the brief does not specify their lifecycle. |
+| Settlement without authorization | Reject without a debit or hold change, as criterion 4 requires. Look up the reference within the requested account. Replay records the rejected attempt; no accepted journal entry is created. This replaces the earlier incompatible policy. |
+| Settlement after a decline | Accept the debit with DECLINED_AUTHORIZATION. Criterion 4 covers absent references; this reference is present. The declined state remains unchanged and other holds remain active. |
+| Final versus partial settlement | Treat each accepted settlement as final and allow one per account and recorded authorization reference. Partial captures are outside this increment; the brief does not specify their lifecycle. |
 | Settlement amount versus hold | Charge the actual positive amount and release the whole approved hold, even when the amounts differ. Available funds do not limit settlement amounts. |
 | Atomic settlement and stored hold amount | Append the debit and a new SETTLED state together. Preserve the original hold amount in that state; the request and posting contain the settled amount. No earlier record changes. |
 | Hold release timing | Release at the settlement's recording sequence; apply the debit at its own value day. Saved earlier cutoffs retain the hold, including for backdated or future-value settlements. |
 | Historical authorization states | decisions(cutoff) returns all recorded states; states(cutoff) projects the latest per account and ID, in first-seen order. Only a latest APPROVED state reserves funds. |
 | Invalid settlement | Require a nonblank reference, a positive amount, a valid account, matching currency and positive days. A failed request records neither a debit nor a hold release. |
 | Settlement retry | Journal compares the complete original Request, including both dates. An identical retry returns its original entry before recalculating state or checking for a second settlement. |
+| Authorization arrives after a rejected settlement | An explicit retry may succeed once the matching authorization exists. Preserve the original settlement dates and the earlier rejection; do not retry automatically. |
 | Diagnostic context | Store anomaly codes in immutable Effects. Account, event ID, authorization reference and dates are already in the same entry's Request. |
 
 ## Applied in reversals
@@ -151,7 +151,7 @@ remain outstanding.
 | Close and capitalization IDs | Generate CLOSE-account-day and INTEREST-account. Retain E7-FEES, E9-FEES and E10-FEES for reassessments. These derived IDs are distinct from E1–E10 and stable across runs. |
 | Executable state | Each invocation creates the two accounts, a new Journal and one Replay. Component instances used for dispatch read the same journal; rejected attempts remain in that run's Replay. |
 | Output in this increment | Print final ledger balances after capitalization, latest authorization states, accepted diagnostics and rejected attempts. Preserve currency precision through Money's decimal representation. A per-day report remains separate work. |
-| Rejections while driving the scenario | Replay records expected failures and continues; Scenario prints them at the end. The provided scenario expects zero rejected attempts under the documented settlement policy. The test suite asserts its numerical results and ordering. |
+| Rejections while driving the scenario | Replay records expected failures and continues; Scenario prints their processing day, event ID and reason at the end. E6 is the sole rejected attempt. Auth-B's decline is an accepted decision. The suite verifies numerical results and ordering. |
 | Runnable command | run.sh changes to the project directory, compiles with Maven offline and invokes the Java main class. No new build plugin or runtime dependency is required. Prime the dependency cache with mvn test when needed. |
 | One complete scenario definition | Move the complete input sequence out of DailyClosingTest into Scenario. The test now uses recorded event and close cutoffs from that same executable scenario, retaining its assertions without duplicating the stream. |
 

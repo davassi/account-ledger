@@ -79,6 +79,7 @@ public final class Scenario {
         journal.entries(cutoff).forEach(entry -> entry.diagnostics().forEach(diagnostic ->
                 System.out.printf("%s: %s%n", entry.eventId(), diagnostic)));
         System.out.printf("Rejected attempts: %d%n", replay.rejections().size());
-        replay.rejections().forEach(System.out::println);
+        replay.rejections().forEach(rejection -> System.out.printf("Day %d %s: %s%n",
+                rejection.processingDay(), rejection.request().eventId(), rejection.reason()));
     }
 }

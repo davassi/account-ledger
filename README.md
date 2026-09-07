@@ -12,10 +12,10 @@ libraries beyond the JDK. Each execution starts with fresh state.
 implemented. The command prints a final summary; the required per-day report
 is still to be implemented.
 
-**Acceptance audit:** the current code also violates criterion 4 by debiting
-an unknown authorization's settlement. Criterion 6 requires an explicit fee-refund
-interpretation. The output below describes current behavior, not a completed
-acceptance result. See [REJECTED.md](REJECTED.md) for the findings and numerical impact.
+**Acceptance audit:** criterion 4 is now implemented: an unknown authorization's
+settlement is rejected without a debit. Criterion 6's fee-refund interpretation
+remains open; the current code retains assessed fees. See [REJECTED.md](REJECTED.md)
+for the findings and numerical impact.
 
 ## Quick start
 
@@ -30,30 +30,24 @@ The first command runs the suite and downloads build dependencies if needed.
 `run.sh` compiles offline using that cache, then launches the scenario. On
 subsequent runs, the suite can also run offline with `mvn -o test`.
 
-To launch an already compiled build directly:
-
-```sh
-java -cp target/classes accountledger.Scenario
-```
-
 ## Expected output
 
 ```text
 Final balances after Day 6 capitalization:
-ACC-001: AED 210.69
+ACC-001: AED 390.93
 ACC-002: BHD 10.008
 ACC-001 Auth-A: SETTLED
 ACC-001 Auth-B: DECLINED
-E6: MISSING_AUTHORIZATION
-Rejected attempts: 0
+Rejected attempts: 1
+Day 4 E6: Unknown authorization: Auth-Z
 ```
 
 Auth-A has settled and released its hold. Auth-B was declined when it was
-requested; E9 does not change that decision. E6 is an accepted settlement with
-a diagnostic under the chosen policy, so it does not count as a rejected attempt.
+requested; E9 does not change that decision. E6 is rejected because Auth-Z has
+no preceding authorization. Its AED 180.00 never leaves the account.
 
 The three overdraft fees total **AED 75.00**. Capitalized interest is
-**AED 0.69** and **BHD 0.008**. These values are calculated by the core and
+**AED 0.93** and **BHD 0.008**. These values are calculated by the core and
 verified by the tests.
 
 ## The six-day scenario
@@ -67,7 +61,7 @@ used by both the executable and the complete-stream test.
 | 1 | E1 credits AED 1,200.00; E2 debits AED 950.00. Both have value Day 1. |
 | 2 | E3 requests Auth-A's AED 200.00 hold. |
 | 3 | E4 credits AED 400.00, value Day 3. |
-| 4 | E5 settles Auth-A for AED 185.00; E6 settles unknown Auth-Z for AED 180.00. Both have value Day 4. |
+| 4 | E5 settles Auth-A for AED 185.00; E6 attempts to settle unknown Auth-Z for AED 180.00 and is rejected. Both requests specify value Day 4. |
 | 5 | E7 debits AED 620.00, value Day 2; E8 requests Auth-B's AED 90.00 hold. |
 | 6 | E9 reverses E7, value Day 2; E10 credits ACC-002 with BHD 10.000 in three installments, booked and valued on Day 5. |
 
@@ -92,13 +86,14 @@ balances and revised daily accruals are:
 | 1 | 250.00 | 0.10 | 0.000 | 0.000 |
 | 2 | 225.00 | 0.09 | 0.000 | 0.000 |
 | 3 | 625.00 | 0.25 | 0.000 | 0.000 |
-| 4 | 235.00 | 0.09 | 0.000 | 0.000 |
-| 5 | 210.00 | 0.08 | 10.000 | 0.004 |
-| 6 | 210.00 | 0.08 | 10.000 | 0.004 |
-| **Interest total** | | **0.69** | | **0.008** |
+| 4 | 415.00 | 0.17 | 0.000 | 0.000 |
+| 5 | 390.00 | 0.16 | 10.000 | 0.004 |
+| 6 | 390.00 | 0.16 | 10.000 | 0.004 |
+| **Interest total** | | **0.93** | | **0.008** |
 
-This table uses all ten input events and the fee assessments, before the final
-interest credits. It is a revised view: the original Day 2 AED close was 250.00,
+This table uses the accepted effects of the ten input attempts and the fee
+assessments, before the final interest credits. It is a revised view:
+the original Day 2 AED close was 250.00,
 and the original Day 5 BHD close was 0.000. Both remain queryable using their
 saved journal sequences.
 
@@ -109,14 +104,13 @@ saved journal sequences.
 | Money | `BigDecimal` amounts use AED's 2 decimals or BHD's 3. Inputs requiring rounding are rejected; calculations round explicitly. No currency conversion. |
 | Journal | Each accepted request and its immutable effects share one sequence. Validation finishes before anything is appended. Existing records are never changed or deleted. |
 | Authorizations | Available balance is ledger balance minus active holds. Approve only when applying the new hold leaves availability at or above zero. Holds do not change the ledger balance. |
-| Settlements | One final capture per account and authorization reference; release the entire approved hold and debit the actual settled amount. An unknown or declined reference still produces a debit and a diagnostic. |
+| Settlements | Reject a reference absent from that account's authorization history without a debit. Otherwise allow one final capture and release the entire approved hold. A declined but recorded reference produces a debit and a diagnostic. |
 | Reversals | Append the opposite of every posting in the referenced event. Preserve authorization decisions and separately assessed fees. Explicit fee refunds require their own compensation. |
 | Overdraft fees | Charge AED 25.00 at most once per account and value day when the closing ledger balance is negative. Reassess closed days chronologically, including the effect of earlier fees. |
 | Interest | Accrue 0.04% daily on positive ledger balances after fees, using `HALF_EVEN` at the account's precision. Accruals stay unspendable until capitalization. |
 | Capitalization | Credit the exact sum of the six rounded daily accruals once, at the end of Day 6. Day 6 earns interest before that credit; no remainder is discarded. |
 
-The current unmatched-settlement policy conflicts with criterion 4 and needs
-correction. Fee retention does not satisfy a net-refund reading of criterion 6;
+Fee retention does not satisfy a net-refund reading of criterion 6;
 append-only permits compensation without deleting the original assessments.
 [REJECTED.md](REJECTED.md) separates these gaps from the incorrect criteria.
 [AMBIGUITIES.md](AMBIGUITIES.md) records the implemented policies and open questions.

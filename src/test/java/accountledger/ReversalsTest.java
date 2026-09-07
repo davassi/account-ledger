@@ -31,7 +31,6 @@ class ReversalsTest {
         journal.append("E4", 3, List.of(aed(3, "400.00")));
         var settlements = new Settlements(journal);
         settlements.settle("E5", 4, "ACC-001", "Auth-A", Money.of(AED, "185.00"), 4);
-        settlements.settle("E6", 4, "ACC-001", "Auth-Z", Money.of(AED, "180.00"), 4);
         debit = journal.append("E7", 5, List.of(aed(2, "-620.00")));
     }
 
@@ -52,7 +51,7 @@ class ReversalsTest {
         assertEquals(List.of(aed(2, "-620.00")), debit.postings());
         assertEquals(Money.of(AED, "-370.00"), journal.balance("ACC-001", 2, debit.sequence()));
         assertEquals(Money.of(AED, "250.00"), journal.balance("ACC-001", 2, reversal.sequence()));
-        assertEquals(Money.of(AED, "285.00"), authorizations.available("ACC-001", 6, reversal.sequence()));
+        assertEquals(Money.of(AED, "465.00"), authorizations.available("ACC-001", 6, reversal.sequence()));
         assertEquals(DECLINED, authB.status());
         assertEquals(states, authorizations.states(reversal.sequence()));
         assertTrue(journal.find("E9", before.size()).isEmpty());
@@ -61,7 +60,7 @@ class ReversalsTest {
 
     @Test
     void aSeparatelyBookedFeeIsNotRefunded() {
-        // A synthetic fee isolates reversal behavior; daily assessment is not implemented yet.
+        // A synthetic fee isolates reversal from the daily assessment policy.
         var fee = journal.append("FEE-D2", 5, List.of(aed(2, "-25.00")));
         var reversal = reversals.reverse("E9", 6, "ACC-001", "E7", 2);
 
@@ -69,7 +68,7 @@ class ReversalsTest {
         assertSame(fee, journal.find("FEE-D2", reversal.sequence()).orElseThrow());
         assertEquals(List.of(aed(2, "620.00")), reversal.postings());
         assertEquals(Money.of(AED, "225.00"), journal.balance("ACC-001", 2, reversal.sequence()));
-        assertEquals(Money.of(AED, "260.00"), journal.balance("ACC-001", 6, reversal.sequence()));
+        assertEquals(Money.of(AED, "440.00"), journal.balance("ACC-001", 6, reversal.sequence()));
     }
 
     @Test
@@ -85,12 +84,16 @@ class ReversalsTest {
         assertEquals(installments, original.postings());
         assertEquals(Money.of(BHD, "10.000"), journal.balance("ACC-002", 5, original.sequence()));
         assertEquals(Money.of(BHD, "0.000"), journal.balance("ACC-002", 5, reversal.sequence()));
-        assertEquals(Money.of(AED, "-335.00"), journal.balance("ACC-001", 6, reversal.sequence()));
+        assertEquals(Money.of(AED, "-155.00"), journal.balance("ACC-001", 6, reversal.sequence()));
     }
 
     @ParameterizedTest
-    @CsvSource({"E5, 185.00, -150.00", "E6, 180.00, -155.00"})
+    @CsvSource({"E5, 185.00, 30.00", "DECLINED, 180.00, -155.00"})
     void aSettlementRefundDoesNotReopenHoldsOrEraseDiagnostics(String reference, String amount, String balance) {
+        if (reference.equals("DECLINED")) {
+            authorizations.authorize("HOLD", 5, "ACC-001", "Declined", Money.of(AED, "180.00"));
+            new Settlements(journal).settle(reference, 5, "ACC-001", "Declined", Money.of(AED, amount), 4);
+        }
         var states = authorizations.states(journal.lastSequence());
         var original = journal.find(reference, journal.lastSequence()).orElseThrow();
         var reversal = reversals.reverse("REFUND", 6, "ACC-001", reference, 4);
@@ -106,8 +109,8 @@ class ReversalsTest {
         var reversal = reversals.reverse("LATE-REVERSAL", 6, "ACC-001", "E7", 6);
 
         assertEquals(Money.of(AED, "-370.00"), journal.balance("ACC-001", 2, reversal.sequence()));
-        assertEquals(Money.of(AED, "-335.00"), journal.balance("ACC-001", 5, reversal.sequence()));
-        assertEquals(Money.of(AED, "285.00"), journal.balance("ACC-001", 6, reversal.sequence()));
+        assertEquals(Money.of(AED, "-155.00"), journal.balance("ACC-001", 5, reversal.sequence()));
+        assertEquals(Money.of(AED, "465.00"), journal.balance("ACC-001", 6, reversal.sequence()));
     }
 
     @Test
@@ -133,7 +136,7 @@ class ReversalsTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"UNKNOWN, ACC-001", "E3, ACC-001", "E7, ACC-002", "E7, UNKNOWN", "E9, ACC-001"})
+    @CsvSource({"UNKNOWN, ACC-001", "E3, ACC-001", "E6, ACC-001", "E7, ACC-002", "E7, UNKNOWN", "E9, ACC-001"})
     void invalidReferencesOrAccountsCannotCreateACompensation(String reference, String accountId) {
         var before = journal.entries();
 
@@ -171,7 +174,7 @@ class ReversalsTest {
 
         var reversal = reversals.reverse("E9", 6, "ACC-001", "E7", 2);
         assertEquals(before.size() + 1, reversal.sequence());
-        assertEquals(Money.of(AED, "285.00"), journal.balance("ACC-001", 6, reversal.sequence()));
+        assertEquals(Money.of(AED, "465.00"), journal.balance("ACC-001", 6, reversal.sequence()));
     }
 
     private static Posting aed(int valueDay, String amount) {

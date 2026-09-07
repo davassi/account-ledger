@@ -72,7 +72,7 @@ public final class Authorizations {
                 .findFirst();
     }
 
-    /** Also recognizes settled references for which no authorization was ever recorded. */
+    /** Recognizes captures even when the recorded authorization remains declined. */
     boolean wasSettled(String accountId, String authorizationId, long cutoff) {
         return journal.entries(cutoff).stream()
                 .map(entry -> entry.request().data())
@@ -84,7 +84,7 @@ public final class Authorizations {
     private Authorization decide(Request.Hold hold, int day, long cutoff) {
         var accountId = hold.accountId();
         var authorizationId = hold.authorizationId();
-        if (find(accountId, authorizationId, cutoff).isPresent() || wasSettled(accountId, authorizationId, cutoff)) {
+        if (find(accountId, authorizationId, cutoff).isPresent()) {
             throw new RequestRejectedException("Authorization ID already used for account: " + authorizationId);
         }
         journal.validateCurrency(accountId, hold.amount());

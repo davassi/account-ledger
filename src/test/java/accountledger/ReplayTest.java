@@ -41,6 +41,26 @@ class ReplayTest {
     }
 
     @Test
+    void aMissingAuthorizationRejectsSettlementUntilThatAuthorizationArrives() {
+        var settlement = new Request("SETTLE", 1,
+                new Request.Settlement("A", "AUTH", Money.of(AED, "185.00"), 1));
+        assertFalse(replay.process(1, settlement));
+        var failures = replay.rejections();
+        assertEquals(List.of(new Rejection(1, settlement, "Unknown authorization: AUTH")), failures);
+        assertEquals(List.of(), journal.entries());
+        assertEquals(Money.of(AED, "250.00"), new Authorizations(journal).available("A", 1, journal.lastSequence()));
+
+        assertTrue(replay.process(2, new Request("HOLD", 2,
+                new Request.Hold("A", "AUTH", Money.of(AED, "200.00")))));
+        assertTrue(replay.process(2, settlement));
+        var accepted = journal.entries();
+        assertTrue(replay.process(2, settlement));
+        assertEquals(accepted, journal.entries());
+        assertEquals(Money.of(AED, "65.00"), new Authorizations(journal).available("A", 2, journal.lastSequence()));
+        assertEquals(failures, replay.rejections());
+    }
+
+    @Test
     void everyFailedAttemptIsRecordedAndTheSameRequestCanLaterSucceed() {
         var reversal = new Request("REVERSE", 5, new Request.Reversal("A", "ORIGINAL", 2));
         assertFalse(replay.process(5, reversal));
@@ -114,13 +134,11 @@ class ReplayTest {
     void authorizationDeclinesAndSettlementDiagnosticsAreAcceptedOutcomes() {
         var hold = new Request("HOLD", 1, new Request.Hold("A", "AUTH", Money.of(AED, "300.00")));
         assertTrue(replay.process(1, hold));
-        assertTrue(replay.process(1, new Request("MISSING", 1,
-                new Request.Settlement("A", "UNKNOWN", Money.of(AED, "180.00"), 1))));
         assertTrue(replay.process(1, new Request("DECLINED", 1,
                 new Request.Settlement("A", "AUTH", Money.of(AED, "50.00"), 1))));
 
         assertEquals(List.of(), replay.rejections());
-        assertEquals(List.of(Diagnostic.MISSING_AUTHORIZATION, Diagnostic.DECLINED_AUTHORIZATION),
+        assertEquals(List.of(Diagnostic.DECLINED_AUTHORIZATION),
                 journal.entries().stream().flatMap(entry -> entry.diagnostics().stream()).toList());
         assertEquals(DECLINED, new Authorizations(journal).states(journal.lastSequence()).getFirst().status());
         assertTrue(replay.process(1, new Request("FUND", 1,
