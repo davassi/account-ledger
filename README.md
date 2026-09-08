@@ -224,7 +224,7 @@ All application code is under [`src/main/java/accountledger`](src/main/java/acco
 | Package | Responsibility |
 | --- | --- |
 | [`accountledger.domain`](src/main/java/accountledger/domain) | `Money` and `CurrencyUnit`: currency precision and monetary arithmetic. |
-| [`accountledger.core`](src/main/java/accountledger/core) | Journal, commands, accounting operations and their records, including command replay. |
+| [`accountledger.core`](src/main/java/accountledger/core) | Journal, commands, accounting operations and their records, including command processing. |
 | [`accountledger.scenario`](src/main/java/accountledger/scenario) | The executable six-day scenario and its daily report. |
 
 `domain` is independent, `core` uses `domain`, and `scenario` uses both.
@@ -260,6 +260,21 @@ flowchart TD
 | [DailyClosing](src/main/java/accountledger/core/DailyClosing.java) | Daily close markers, fee assessment and updated accruals. |
 | [Interest](src/main/java/accountledger/core/Interest.java) | Rounded daily accruals and final capitalization. |
 
+The operations above read and write these records. Only postings move money.
+
+| Record | Role |
+| --- | --- |
+| [Command](src/main/java/accountledger/core/Command.java) · `Command.Data` | The input: an event ID, a booked day and one of seven typed payloads — `Postings`, `Hold`, `Settlement`, `Reversal`, `DayClose`, `FeeReassessment`, `InterestCapitalization`. Record equality decides whether a submission is a retry. |
+| [Account](src/main/java/accountledger/core/Account.java) | An ID and an opening balance. The balance carries the currency, so the account does not repeat it. |
+| [Journal.Entry](src/main/java/accountledger/core/Journal.java) · `Effects` | One accepted command and everything it produced, visible together under one sequence. E10 is one entry with three postings. |
+| [Posting](src/main/java/accountledger/core/Posting.java) | One account, one signed amount, one value day. A line, not a transaction: one command may produce several. |
+| [Authorization](src/main/java/accountledger/core/Authorization.java) | A hold decision — `APPROVED`, `DECLINED` or `SETTLED` — with the original hold amount. Only the latest approved state reserves funds. |
+| [Accrual](src/main/java/accountledger/core/Accrual.java) | Rounded interest for one value day. A fact, not money, until capitalization posts the total. |
+| [Diagnostic](src/main/java/accountledger/core/Diagnostic.java) | An anomaly on an accepted entry; the account and reference are in that entry's command. |
+| [Rejection](src/main/java/accountledger/core/Rejection.java) | One failed attempt with its processing day and reason. Kept by `CommandProcessor`, outside the journal. |
+| [CommandRejectedException](src/main/java/accountledger/core/CommandRejectedException.java) | The expected domain failure `CommandProcessor` catches and records; anything else propagates. |
+| [Money](src/main/java/accountledger/domain/Money.java) · [CurrencyUnit](src/main/java/accountledger/domain/CurrencyUnit.java) | An exact decimal at its currency's scale — AED 2 places, BHD 3 — with explicit rounding and installment splitting. |
+
 ---
 
 ## Tests and the deliberate counterexample
@@ -269,20 +284,32 @@ The ordinary suite covers decimal precision, atomic writes, retries, historical 
 * [ScenarioTest](src/test/java/accountledger/scenario/ScenarioTest.java) checks the complete scenario's financial results, arrival order and closing boundaries.
 * [DailyReportTest](src/test/java/accountledger/scenario/DailyReportTest.java) checks all six daily outputs, historical availability, late BHD credit, capitalization, fee dates, errors and immutable report boundaries. 
 
-One required test deliberately challenges the chosen fee-retention policy.
-Run it separately:
+**One test is designed to fail.** The brief requires it, and it exists to show
+what the fee-retention policy costs rather than to hide it.
+
+[FeeTimingCounterexample](src/test/java/accountledger/core/FeeTimingCounterexample.java)
+runs the same three steps in two orders (a debit of AED 10.00, its reversal, and the Day 1 close) and asserts that the order makes no difference to the final balance:
+
+| Order | Balance at the close | Final balance |
+| --- | --- | ---: |
+| debit → **reverse** → close | 0.00, so no fee | **0.00** |
+| debit → close → **reverse** | -10.00, so the AED 25.00 overdraft fee is assessed | **-25.00** |
+
+The principal cancels in both. The overdraft fee does not: a reversal appends
+only the opposite of the original postings, so a fee already assessed at a
+close stays. The reversal itself charges nothing; keeping the fee is a policy
+choice, argued under criterion 6 in [REJECTED.md](REJECTED.md). The assertion
+therefore fails, and that failure is the documented behaviour.
+
+Run it on its own:
 
 ```sh
 mvn -o -Dtest=FeeTimingCounterexample test
 ```
 
 > [!IMPORTANT]
-> **Expected result: one assertion failure and a nonzero exit.** Reversing before
-> close leaves AED 0.00; reversing after close leaves AED -25.00 because the
-> assessed fee is retained. This exposes the policy's dependence on timing.
-[FeeTimingCounterexample.java](src/test/java/accountledger/core/FeeTimingCounterexample.java)
-explains it inline. Its class name excludes it from the default test selection;
-it is not disabled.
+> **Expected: one assertion failure, zero errors, nonzero exit.** A passing run
+> would mean the fee-retention policy had changed.
 
 ---
 
@@ -290,17 +317,10 @@ it is not disabled.
 
 The core is designed for a single-threaded replay of one six-day window.
 Holds have no automatic expiry, settlements are final, and reversals are full.
-A negative BHD close is rejected because no BHD overdraft fee was specified.
-Capitalization freezes accruals; reopening finalized interest requires a future
-explicit policy.
-
-CommandProcessor accepts already constructed, typed commands. Construction failures happen
-before this API receives the input. It catches `CommandRejectedException` only;
-other exceptions propagate.
 
 | Document | Contents | 
 | --- | --- |
 | [AMBIGUITIES.md](AMBIGUITIES.md) | Unspecified behavior and the decisions applied. |
-| [NUMBERS.md](NUMBERS.md) | Constants, fixture values and their rationale. |
+| [NUMBERS.md](NUMBERS.md) | The constants in the production code and why each has its value. |
 | [REJECTED.md](REJECTED.md) | Refused criteria, policy alternatives and approaches replaced during development. |
 | [WORKLOG.md](WORKLOG.md) | Timestamped implementation and verification history. |
