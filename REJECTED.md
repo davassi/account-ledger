@@ -1,137 +1,140 @@
 # Acceptance audit and rejected criteria
 
-This review checks the criteria against the brief, separately from the behavior
-of the current implementation. A test that confirms our chosen policy does not
-prove that the policy satisfies the requirement.
+This review checks the eight acceptance criteria against the brief, separately
+from what the code happens to do. That separation matters: a passing test shows
+the implementation matches the policy we chose, not that the policy satisfies
+the requirement.
+
+Three criteria contradict the brief outright. Two more are accepted only with a
+qualification, and one is refused on interpretation rather than arithmetic.
 
 ## Verdict on every criterion
 
 | # | Criterion | Verdict |
 | --- | --- | --- |
-| 1 | Day 2 balance at end-of-Day-5 knowledge, before fees, is AED -370.00. | **Accept**, with the explicit pre-fee qualification. |
-| 2 | E7 causes exactly one overdraft fee, on Day 2. | **Refuse:** there are three assessments, for value days 2, 4 and 5. |
+| 1 | The Day 2 balance, as known at the end of Day 5 and before fees, is AED -370.00. | **Accept**, provided "before fees" is stated. |
+| 2 | E7 causes exactly one overdraft fee, on Day 2. | **Refuse.** There are three, for value days 2, 4 and 5. |
 | 3 | The Day 4 settlement of Auth-A must be accepted. | **Accept.** |
-| 4 | A settlement with an authorization ID absent from the ledger must be rejected without a debit. | **Accept; implemented and tested.** |
-| 5 | If Auth-B is approved, its hold reduces availability but not ledger balance. | **Accept:** conditional statement; Auth-B is declined in this stream. |
-| 6 | After E9, all balances and fees return to pre-E7 values. | **Refuse as an automatic consequence of E9:** E9 reverses E7's principal only; the three separately assessed fees remain. This verdict depends on the documented reversal scope, not on append-only prohibiting refunds. |
-| 7 | E10's three installments must each be BHD 3.334. | **Refuse:** they would total BHD 10.002. |
-| 8 | Discard any difference between rounded accruals and capitalized interest. | **Refuse:** this contradicts the required exact equality. |
+| 4 | A settlement whose authorization ID is absent must be refused, with no debit. | **Accept.** Implemented and tested. |
+| 5 | If Auth-B is approved, its hold reduces availability but not the ledger balance. | **Accept.** It is a conditional, and Auth-B is declined in this stream. |
+| 6 | After E9, all balances and fees return to their pre-E7 values. | **Refuse as an automatic consequence of E9.** It reverses E7's principal only; the three fees were assessed separately and remain. |
+| 7 | E10's three installments must each be BHD 3.334. | **Refuse.** They would total BHD 10.002. |
+| 8 | Discard any difference between the rounded accruals and the capitalized interest. | **Refuse.** It contradicts the required exact equality. |
 
-The unqualified contradictions are **2, 7 and 8**. A different implementation
-preference does not justify adding criterion 4 to that list. **Criterion 6 is
-also refused under the adopted interpretation:** a reversal does not imply
-automatic compensation of separate fee entries. This is an explicit policy
-resolution, not a claim that net fee restoration is technically impossible.
+Criteria **2, 7 and 8** are plain contradictions — the arithmetic decides them,
+and no reading rescues them.
+
+**Criterion 6 is different.** It is refused because of how we scoped reversal,
+not because append-only makes it impossible. That distinction is laboured below
+because it is the one place where a reader could reasonably reach a different
+answer.
+
+Criterion 4 does not belong on the refused list. Preferring a different
+implementation is not grounds for calling a criterion wrong — a point the audit
+had to correct in itself, as described at the end.
 
 ## 1 — Accept the pre-fee Day 2 balance
 
-Only E1, E2 and E7 affect ACC-001 on or before value Day 2, as known at the end
+Only E1, E2 and E7 touch ACC-001 on or before value Day 2, as known at the end
 of Day 5:
 
 ```text
 1,200.00 - 950.00 - 620.00 = -370.00 AED
 ```
 
-Auth-A's hold does not enter ledger balance. E4 and the settlements have later
-value days, and E9 is not yet known. E8 introduces no ledger posting either.
+Auth-A's hold never enters the ledger balance. E4 and the settlements have later
+value days, E9 is not yet known, and E8 posts nothing.
 
-This is a pre-fee evaluation, not the actual final Day 5 view including fees.
-The three relevant readings are:
+The qualification matters, because value Day 2 has three defensible readings:
 
 | View of value Day 2 | AED balance |
 | --- | ---: |
-| Original Day 2 close | 250.00 |
-| With E7 known, before fee assessment | -370.00 |
-| At the actual Day 5 close, including the Day 2 fee | -395.00 |
+| The original Day 2 close | 250.00 |
+| With E7 known, before fees are assessed | -370.00 |
+| At the actual Day 5 close, fees included | -395.00 |
 
-[DailyClosingTest](src/test/java/accountledger/DailyClosingTest.java) preserves
-the original cutoff and checks the pre-fee result. The audit also queried the
-actual Day 5 close to verify -395.00. Calling -370.00 a balance *after* fee
-assessment would be incorrect.
+The scenario test keeps the original cutoff and checks the pre-fee figure, and
+the audit separately queried the real Day 5 close to confirm -395.00. Calling
+-370.00 a balance *after* fee assessment would simply be wrong.
 
 ## 2 — Refuse one fee per backdated event
 
-The limit is once **per account and day**, not once per triggering event.
-Process the affected days chronologically because an earlier fee changes later
-closing balances.
+The limit is once per **account and day**, not once per triggering event. Days
+are processed in order, because an earlier fee changes later closing balances.
 
-| Value day | Before all fees, earlier policy debited E6 | Before all fees, current policy rejects E6 | Assessment |
+| Value day | Under the abandoned policy (E6 debited) | Under the current policy (E6 refused) | Assessment |
 | --- | ---: | ---: | --- |
 | 2 | -370.00 | -370.00 | AED 25.00 |
-| 3 | 30.00 | 30.00 | None: the Day 2 fee leaves +5.00. |
-| 4 | -335.00 | -155.00 | AED 25.00; negative even before its own fee. |
-| 5 | -335.00 | -155.00 | AED 25.00; negative after the earlier fees. |
+| 3 | 30.00 | 30.00 | None — the Day 2 fee leaves +5.00 |
+| 4 | -335.00 | -155.00 | AED 25.00, negative before its own fee |
+| 5 | -335.00 | -155.00 | AED 25.00, negative after the earlier fees |
 
-Both settlement policies therefore yield three assessments totaling **AED 75.00**.
-They are discovered and booked on Day 5, with value days 2, 4 and 5. E7's
-booked day and the fees' value days must not be conflated.
+Both settlement policies give three assessments totalling **AED 75.00**. They
+are discovered and booked on Day 5, with value days 2, 4 and 5. E7's booked day
+and the fees' value days are different things and must not be merged.
 
 ## 3 — Accept Auth-A's settlement
 
-At E3, the ledger is AED 250.00 and the AED 200.00 hold leaves AED 50.00
-available, so Auth-A is approved. Before E5, E4 has raised the ledger to
-AED 650.00. The AED 185.00 final settlement debits that amount and releases the
-full AED 200.00 hold, leaving AED 465.00 before E6.
+At E3 the ledger holds AED 250.00, and the AED 200.00 hold leaves AED 50.00
+available, so Auth-A is approved. By E5, E4 has lifted the ledger to AED 650.00.
+The AED 185.00 settlement debits that amount and releases the whole AED 200.00
+hold, leaving AED 465.00 before E6.
 
-E7 arrives on Day 5. Its backdating cannot make the Day 4 system act on
-information it did not yet have or rewrite the recorded authorization.
-[SettlementsTest](src/test/java/accountledger/SettlementsTest.java) verifies
-acceptance, full hold release and historical states.
+E7 arrives on Day 5. Backdating it cannot make the Day 4 system act on
+information it did not have, nor rewrite a decision already recorded.
 
-## 4 — Accept the missing-authorization rejection rule
+## 4 — Accept the missing-authorization rule
 
-This criterion supplies a settlement rule and conflicts with none of the
-non-negotiable rules. The brief does not state that a settlement is an
-irrevocable external debit that must be honored despite a missing authorization.
-There is no sufficient basis for refusing this criterion.
+This criterion supplies a settlement rule and contradicts none of the brief's
+fixed rules. The brief nowhere says a settlement is an irrevocable external
+debit that must be honoured despite a missing authorization. There is no
+sufficient basis for refusing it.
 
-[Settlements](src/main/java/accountledger/Settlements.java) now rejects a
-reference absent from the requested account's authorization history. Replay
-records E6's failure on Day 4; no monetary posting or accepted entry is created.
-The ledger and available balance remain AED 465.00 after E5 and rejected E6.
+Settlements now refuses a reference that is absent from the requested account's
+history. Replay logs E6's failure on Day 4, and no posting or entry is created:
+the ledger and available balance both stay at AED 465.00 after E5 and the
+refused E6.
 
-The tests verify unchanged history, account-scoped lookup, the scenario's sole
-rejection and retry after a missing authorization arrives. Rejection reserves
-neither the event ID nor the authorization reference. Accepted retries still
-use Journal's single request comparison.
+A rejection claims neither the event ID nor the authorization reference, so a
+later retry can succeed once the matching authorization exists.
 
-The earlier test expected an unmatched debit and MISSING_AUTHORIZATION; it
-encoded our mistaken policy and was replaced. Criterion 4 says nothing about a
-*declined but present* authorization; the separately documented policy still
-accepts that debit with DECLINED_AUTHORIZATION.
+Note the limit of this criterion: it says nothing about an authorization that is
+*present but declined*. That case follows the separate policy documented in
+[AMBIGUITIES.md](AMBIGUITIES.md) — the debit is accepted and flagged.
 
 ## 5 — Accept the conditional hold rule
 
-An approved hold reduces available balance by its amount and creates no
-monetary posting. A decline reserves nothing. In this stream Auth-B is declined
-because the account is already negative when E8 arrives, whether E6 is accepted
-or rejected.
+An approved hold reduces the available balance by its amount and posts nothing
+to the ledger. A decline reserves nothing at all.
 
-The condition must still be tested with a funded account. Existing
-[AuthorizationsTest](src/test/java/accountledger/AuthorizationsTest.java) cases
-verify approved holds, unchanged ledger balances and the zero-availability boundary.
+The criterion is a conditional, and in this stream its condition is false:
+Auth-B is declined, because the account is already negative when E8 arrives.
+That holds whether E6 is accepted or refused. The rule itself is still tested
+directly, on a funded account, in the authorization tests.
 
 ## 6 — Refuse automatic restoration of balances and fees
 
-E9 explicitly names E7. Under the adopted reversal scope, it negates E7's
-postings and restores AED 620.00 of principal. The three fee assessments are
-separate entries and retain their AED 75.00 charge. The pre-capitalization
-balance becomes AED 390.00, compared with AED 465.00 before E7.
+E9 names E7 explicitly. Under the reversal scope we adopted, it negates E7's
+postings and restores AED 620.00 of principal. The three fees live in separate
+entries and keep their AED 75.00. The balance before capitalization becomes
+AED 390.00, against AED 465.00 before E7 arrived.
 
-The non-negotiable rules specify fee assessment, but no automatic fee-refund
-policy. We interpret this criterion as claiming that reversing E7 alone
-restores everything, and refuse that claim. We do not introduce additional
-compensations to make it true. The fee-retention decision is settled for this
-implementation; a refund component is not outstanding work.
+The brief specifies how fees are assessed but gives no automatic refund policy.
+We read this criterion as claiming that reversing E7 *by itself* restores
+everything, and we refuse that claim rather than adding compensations to make it
+true.
 
-Append-only would permit explicit compensating credits. It does **not** force
-economic fee retention. A different policy could satisfy a net-refund reading
-of the criterion while preserving the original assessments. Deleting those
-records or changing earlier saved views would violate append-only.
+The important qualification: **append-only does not force this outcome.** It
+would happily accept explicit compensating credits, and a different policy could
+satisfy a net-refund reading while leaving the original assessments in place.
+What append-only does forbid is deleting those records or altering an earlier
+saved view. The refusal is a policy decision, not a technical limit, and a fee
+refund component is not outstanding work.
 
-The deliberately failing test exposes the timing dependence of our chosen
-policy. The daily report likewise preserves the original Day 5 close of
-AED -230.00 beside its revised AED 390.00 balance; E9 does not rewrite history.
+The deliberately failing test below exists to keep this decision honest, by
+showing what it costs. The daily report makes the same point: the original Day 5
+close of AED -230.00 sits beside its revised AED 390.00 balance, because E9 does
+not rewrite history.
 
 ## 7 — Refuse three installments of BHD 3.334
 
@@ -139,119 +142,107 @@ AED -230.00 beside its revised AED 390.00 balance; E9 does not rewrite history.
 3 × 3.334 = 10.002 BHD
 ```
 
-BHD 10.000 contains 10,000 minor units, which are not divisible by three.
-The implemented split is **3.334, 3.333, 3.333**, totaling exactly 10.000.
-Equal installments means as equal as the currency precision allows; the first
-installment receives the remaining minor unit. [MoneySplitTest](src/test/java/accountledger/MoneySplitTest.java)
-verifies conservation, precision and the corresponding negative split.
+BHD 10.000 is 10,000 minor units, which do not divide by three. The
+implementation splits it **3.334, 3.333, 3.333**, totalling exactly 10.000.
+Equal installments can only mean as equal as the currency allows, with the
+first installment taking the spare minor unit.
 
 ## 8 — Refuse discarding an interest difference
 
-The brief explicitly requires the rounded daily accruals to sum exactly to
-the capitalized credit. Define the credit as that sum; there is no extra
-remainder to discard and no second calculation of a rounded unrounded total.
+The brief requires the rounded daily accruals to add up exactly to the
+capitalized credit. So the credit *is* that sum: there is no leftover to
+discard, and no second calculation to reconcile against.
 
-[InterestTest](src/test/java/accountledger/InterestTest.java) exercises daily
-ties: six AED accruals of 0.02 total 0.12, whereas rounding their six unrounded
-products together would give 0.09. The latter calculation cannot replace the
-required sum. Equivalent BHD fixtures verify the three-decimal case.
+The interest tests exercise the case where this matters. Six AED accruals of
+0.02 total 0.12, whereas rounding their six unrounded products together would
+give 0.09. The second figure cannot stand in for the first. Equivalent dinar
+fixtures cover the three-decimal case.
 
-## Numerical impact of the correction and refund choice
+## What the two contested choices are worth
 
-These are distinct outcomes, not three interchangeable expected outputs:
+Criterion 4 and criterion 6 each change the final number. These are three
+distinct outcomes, not three readings of one result:
 
-| Behavior | AED balance before capitalization | Rounded AED interest | Final AED balance |
+| Behaviour | AED before capitalization | Rounded AED interest | Final AED |
 | --- | ---: | ---: | ---: |
-| Abandoned policy: debit E6, retain fees | 210.00 | 0.69 | 210.69 |
-| Current code: reject E6, retain fees | 390.00 | 0.93 | 390.93 |
-| Reject E6, compensate the three fees at their original value days | 465.00 | 1.03 | 466.03 |
+| Abandoned: debit E6, keep fees | 210.00 | 0.69 | 210.69 |
+| **Current: refuse E6, keep fees** | **390.00** | **0.93** | **390.93** |
+| Refuse E6, refund the three fees at their original value days | 465.00 | 1.03 | 466.03 |
 
-The audit initially verified the latter two as counterfactual replays. The
-ordinary suite and executable now verify **AED 390.93** in the implementation.
-The fee-compensation row remains a counterfactual, with credits at the three
-original value days after E9. It documents the rejected alternative, not a
-planned feature. Both alternatives keep the original fee facts.
-BHD ends at 10.008 in all three cases. Rejecting E6 changes the AED result;
-the fee-refund interpretation changes it again.
+The middle row is what the test suite and the runnable scenario verify. The
+third row is a what-if, kept to show the rejected alternative rather than a
+planned feature; both alternatives leave the original fee facts on record. BHD
+finishes at 10.008 in every case.
 
-## Deliberately failing test
+## The deliberately failing test
 
-[FeeTimingCounterexample.java](src/test/java/accountledger/FeeTimingCounterexample.java)
-asserts that reversal timing should not change the resulting balance. Run:
+[FeeTimingCounterexample.java](src/test/java/accountledger/core/FeeTimingCounterexample.java)
+asserts that the timing of a reversal should not change the resulting balance.
+Run it on its own:
 
 ```sh
 mvn -o -Dtest=FeeTimingCounterexample test
 ```
 
-Verified during this audit: **one assertion failure, zero errors, nonzero exit**.
-Expected AED 0.00, actual AED -25.00. Both paths cancel the same debit, but a fee
-assessed before reversal remains charged. Its inline comment explains that
-limitation. The test runs separately by name and is not disabled.
+It fails, as intended: **one assertion failure, no errors, nonzero exit.**
+Expected AED 0.00, actual AED -25.00. Both paths cancel the same debit, but a
+fee assessed before the reversal stays charged. The test is excluded from the
+ordinary suite by name, not disabled, and its inline comment explains why it
+exists.
 
-The ordinary suite now passes **187 tests**, including the criterion 4
-correction and nine daily-report cases. The refund interpretation above is
-an explicit decision; passing tests verify its implementation, not its necessity.
+That is the honest cost of the criterion 6 decision, kept visible on purpose
+rather than argued away.
 
-## Deliverable audit
+## Findings on the deliverables
 
-| Deliverable | Finding |
+| Area | Finding |
 | --- | --- |
-| Git history, no squashing | The local history and reflog showed 18 incremental commits at the start of this review, including a separate corrective commit. Preserve them when publishing. |
-| README | Contains runnable commands, daily report examples and an explanation of original versus revised balances. |
-| NUMBERS.md | Documents fee, rate, precision, window, build versions and fixture rationale. A check found all numeric string-literal magnitudes in the Java sources represented, normalizing signs and trailing zeros; this is a coverage aid, not proof of every rationale. |
-| AMBIGUITIES.md | Records the corrected settlement rule, the adopted fee-retention policy and the daily report's snapshot and timing semantics. |
-| REJECTED.md | This review covers all eight criteria and retains the actual abandoned approaches below. |
-| Annotated failing test | Present and verified separately as described above. |
-| WORKLOG.md | Contains timestamped activity records; this audit adds an entry using the observed UTC clock and actual checks. |
-| Per-day output from the original Build requirement | **Implemented.** DailyReport prints all six closes for both accounts, revised balances, availability, newly assessed fees with value days, original authorization states, errors and diagnostics. Day 6 includes capitalization. |
-| GitHub repository | **Not verified.** No Git remote is configured locally. A local commit history does not demonstrate GitHub publication. |
+| Git history | Incremental commits, including a separate corrective commit, with nothing squashed. Preserve them when publishing. |
+| NUMBERS.md coverage | A check found every numeric literal in the Java sources represented, normalising signs and trailing zeros. That is a coverage aid, not proof that each one is justified. |
+| Per-day output | Implemented. All six closes for both accounts, with revised balances, availability, newly assessed fees and their value days, hold states, errors and diagnostics. Day 6 includes capitalization. |
 
-The local implementation and documentation cover the agreed scope. GitHub
-publication remains unverified; no remote is configured. Criterion 4 is
-corrected and criterion 6 has the explicit interpretation above.
+## Approaches abandoned along the way
 
-## Approaches abandoned during implementation
+**Subtracting holds with a stream reduction.** The first available-balance
+calculation reduced with subtraction, which is not associative — regrouping the
+operands changes the answer, so it does not satisfy what `reduce` assumes. It
+was replaced first by a direct loop, then by the current version, which adds the
+active holds together and subtracts that single total. It also resolves the
+latest state of each authorization first, so an old approval cannot keep
+reserving money after it has been settled.
 
-The first draft of available-balance calculation used `Stream.reduce` with
-`Money::subtract`. Subtraction is not associative, so it does not satisfy the
-reduction contract. Replaced it with a direct loop subtracting each approved
-hold before running the tests. With the user's later stream preference, the
-current implementation sums active holds using associative addition, then
-subtracts that total once. It projects the latest authorization states first,
-so a historical approval cannot keep reserving funds after settlement.
+**Two places deciding what a repeat was.** The first authorization component
+duplicated the journal's lookup and comparison. Both paths were replaced by a
+single comparison of the immutable request inside the journal. Effects are now
+calculated only for genuinely new requests, so a repeat can never turn a
+recorded decline into an approval just because money arrived in between.
 
-The first authorization component duplicated retry lookup and comparisons in
-Journal and Authorizations. Replaced both paths with one comparison of immutable
-Request inputs in Journal. Effects are computed only for new requests, so a
-retry cannot turn a recorded decline into an approval after a later credit.
+**An available balance that only knew "now".** The first version always used the
+latest sequence. That was enough to authorize something immediately, but could
+not rebuild an old close once new postings or holds had arrived. It was replaced
+by an explicit cutoff, shared by the ledger balance and the recorded decisions —
+the distinction the whole historical-view design now rests on.
 
-The initial available-balance API always used the latest sequence. That was
-sufficient for an immediate authorization, but could not reconstruct old closes
-after new postings or holds. Replaced it with an explicit cutoff shared by the
-ledger balance and the recorded decisions.
+**Generic exceptions for expected failures.** Domain failures used to raise a
+general-purpose argument exception. They now raise a specific rejection type,
+which keeps the old supertype but lets Replay catch only what it expects and
+leave real faults alone.
 
-Expected domain failures previously used generic IllegalArgumentException.
-Replaced those with RequestRejectedException, preserving the existing exception
-supertype while allowing Replay to catch only expected failures. Rejections are
-recorded as attempts outside the accepted journal; they do not reserve event IDs
-or become inputs to authorization, reversal or capitalization lifecycle queries.
+**The scenario living inside a test.** The full event stream was originally
+written inside a closing test. It moved into the runnable scenario, and the test
+was changed to query the resulting history, so that the command and the
+numerical checks share one definition instead of two copies that could drift.
 
-The complete scenario originally existed only inside DailyClosingTest. Moved
-its input sequence into the executable Scenario and changed that test to query
-the resulting history. This keeps one scenario definition shared by execution
-and numerical verification as the command-line runner is introduced.
+**Treating a valid criterion as optional.** The earlier acceptance analysis
+dismissed the settlement requirement in criterion 4 simply because the brief's
+fixed rules did not mention that behaviour. The audit withdrew that reasoning: a
+chosen policy that contradicts a valid criterion is a gap to close, not evidence
+that the criterion is wrong. Missing references are now refused at the existing
+Replay boundary, and the obsolete diagnostic and a redundant reservation check
+were both removed. No new retry mechanism or settlement state was needed.
 
-The earlier acceptance analysis treated a compatible settlement requirement as
-optional merely because the non-negotiable rules did not specify that behavior.
-The audit withdrew that reasoning. A chosen policy that contradicts a valid
-acceptance criterion is a compliance gap to fix, not a reason to call the
-criterion wrong. The implementation now rejects missing references through
-the existing Replay boundary. The obsolete MISSING_AUTHORIZATION diagnostic
-and the redundant authorization-ID reservation check were removed; no new
-retry mechanism or separate settlement state was introduced.
-
-An automatic fee-refund component was proposed while exploring criterion 6's
-net-restoration reading. Dropped that proposal before implementation: the
-adopted scope reverses the referenced entry only and retains separate fees.
-The alternative calculation remains documented above; it is not a missing
-business requirement or a pending component.
+**An automatic fee-refund component.** Proposed while exploring the
+net-restoration reading of criterion 6, and dropped before implementation. The
+adopted scope reverses the referenced entry and keeps separate fees. The
+alternative is costed in the table above; it is neither a missing requirement
+nor pending work.

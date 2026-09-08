@@ -1,170 +1,178 @@
 # Ambiguities and decisions
 
-Acceptance review correction: criterion 4 is a valid settlement requirement.
-The implementation rejects E6 without a debit. For criterion 6, the adopted
-scope reverses E7's principal only and retains separate fee assessments.
-Append-only would allow explicit refunds, but does not require them. Automatic
-fee restoration is refused under this interpretation; it is not pending work.
-See [REJECTED.md](REJECTED.md) for the complete audit.
+The brief left a number of things open. This file records each one and the
+choice made, so that a reader can tell a deliberate decision from an accident.
 
-## Applied in the Money component
+It does not argue the acceptance criteria. That is
+[REJECTED.md](REJECTED.md), which covers all eight, including the two that were
+refused on interpretation rather than on arithmetic.
 
-| Ambiguity | Decision |
+## Money and currencies
+
+| Open question | Decision |
 | --- | --- |
-| Input precision | Reject values that would require rounding. Future calculations will round explicitly at their own boundary. |
-| Trailing zeros and equality | Normalize every amount to the currency scale, including when it comes straight from the constructor. |
-| Negative and zero amounts | Allowed in Money: they are needed for balances, postings and adjustments. Validating that a request is positive belongs to the operations. |
-| Different currencies | Addition and subtraction require the same currency. No implicit conversion. |
-| Missing values | Currency and amount are mandatory; use the standard Java exceptions. |
-| Maximum amount limit | No business limit is specified; keep BigDecimal arithmetic exact, with no MathContext that would truncate results. |
-| Multiplication and rounding | Accept a BigDecimal factor and an explicit RoundingMode. Multiply exactly, then round once to the account currency's scale. There is no implicit rounding default. UNNECESSARY requires an exactly representable result. |
-| Factor precision and sign | Do not normalize the factor to the currency scale. Zero and negative factors are valid arithmetic; deciding which balances earn interest belongs to the interest component. |
-| Sign queries | Money.signum returns the sign of the stored, already normalized amount. A product rounded to zero has sign zero. |
-| Equal installments | Read as as-equal-as-possible: divide whole minor units and assign the remainder to the first installments. The maximum difference is one minor unit. |
-| Splitting zero and negative amounts | Supported. The remainder keeps the sign: splitting the opposite amount compensates the same installments, in the same positions. |
-| Installment count and zero installments | Require a positive count. Allow zero installments when the available minor units are fewer than the requested installments. |
-| Mutability of the installments | Return an immutable list of Money; a computed split preserves its total. |
+| Input precision | Refuse any value that would need rounding to be stored. Calculations round on purpose, at their own boundary. |
+| Trailing zeros and equality | Every amount is stored at its currency's number of decimals, including amounts passed straight to the constructor. Two amounts that are worth the same are equal. |
+| Negative and zero amounts | Allowed. Balances, postings and corrections all need them. Whether a particular request must be positive is the operation's business, not Money's. |
+| Mixing currencies | Adding and subtracting require the same currency. Nothing is converted implicitly. |
+| Missing values | Currency and amount are both required, reported with the standard Java exceptions. |
+| An upper limit on amounts | The brief sets none. Arithmetic stays exact, with nothing configured that would quietly truncate a result. |
+| Multiplying and rounding | Take a factor and an explicit rounding mode. Multiply exactly, then round once, to the account currency's precision. There is no default rounding mode; asking for "no rounding" requires a result that already fits. |
+| Precision and sign of the factor | The factor is not forced to the currency's precision. Zero and negative factors are valid arithmetic. Deciding which balances earn interest belongs to the interest rules. |
+| Asking for the sign | The sign is read from the stored, already-rounded amount. A product that rounds to zero has sign zero. |
+| Equal installments | Read as *as equal as the currency allows*. Divide the whole minor units and give the remainder to the earliest installments, so no two differ by more than one minor unit. |
+| Splitting zero and negative amounts | Supported. The remainder follows the sign, so splitting the opposite amount cancels the same installments in the same positions. |
+| Number of installments | Must be positive. Some may come out as zero when there are fewer minor units than installments. |
+| Changing a split afterwards | The returned list cannot be modified, and its parts always add back to the original. |
 
-## Applied in the history
+## The journal
 
-| Ambiguity | Decision |
+| Open question | Decision |
 | --- | --- |
-| Account currency and opening balance | Account holds the ID and the opening Money; the currency is already carried by Money. Account definitions are fixed when the journal is constructed. |
-| One event with several postings | A single Journal.Entry holds the ID, the booked day and the postings. One sequence makes all the installments visible together. |
-| E10 arrives after E9 but declares Day 5 | Keep the recording sequence, the booked day and the value day separate. Do not impose an increasing order on the booked day. |
-| Historical balance | The query specifies the value day and the maximum known sequence, both inclusive. The opening balance is included exactly once; historical views stay queryable after new insertions. |
-| Time bounds | Journal postings and queries accept positive whole days. The interest policy limits daily closes to the specified six-day window. Sequence zero precedes the first record; cutoffs that are negative or beyond the last record are rejected. |
-| Future value day | Allowed even after the booked day: the posting only takes effect from its own value day. |
-| Duplicates in the journal | Compare immutable Request values, including ID, booked day, input type and all input fields. Identical requests return the original Entry; conflicting IDs fail before computing effects. New event kinds will extend Request.Data with their full input metadata. |
-| Concurrency and atomicity | A single thread. Validate and copy every posting before adding the entry. A failure adds no postings and consumes no sequence. |
-| Reading the history | Return immutable copies, including of the internal lists; changes to the caller's collections do not alter accounts or records. |
-| Entry with no postings | Allowed: it records the metadata and advances the sequence without changing the balance. Authorization decisions, closes without fees and reassessments without new fees use these entries. |
-| Technical rejections | The journal raises exceptions before recording. Replay keeps expected domain rejections in a separate append-only list of attempts. Accepted settlement anomalies stay in the journal. |
-| Compensating postings | Reversals resolves and validates the original event, then appends the opposite postings. Direct Journal.append remains the lower-level operation and does not infer reversal references. |
+| Account currency and opening balance | An account carries its ID and its opening amount, and the amount already carries the currency. Accounts are fixed when the journal is built. |
+| One event, several postings | One entry holds the event ID, the booked day and all the postings. A single sequence number makes them visible together. |
+| E10 arrives after E9 but claims Day 5 | Recording order, booked day and value day stay independent. Booked days are not required to increase. |
+| Historical balances | A query names the value day and how much history it may see. Both bounds include their endpoint. The opening balance counts once, and old views keep working after new entries arrive. |
+| Limits on days | Postings and queries take positive whole days. The six-day limit comes from the interest rules, not the journal. Sequence zero means "before anything was recorded"; a cutoff that is negative or past the end is refused. |
+| A value day in the future | Allowed, even later than the booked day. The posting simply takes effect from its own value day. |
+| Repeated events | Compare the whole request: ID, booked day, type and every field. An identical request returns the original entry. The same ID with different content is refused before anything is calculated. |
+| Concurrency | One thread. Everything is validated and copied before the entry is added, so a failure leaves no partial postings and uses no sequence number. |
+| Reading history | Callers get copies they cannot modify, including of the inner lists. Nothing a caller does to what it received can reach the records. |
+| An entry with no postings | Allowed. It records what happened and moves the sequence forward without moving any money. Hold decisions, closes with no fee and reassessments with no new fee all look like this. |
+| Failures | The journal raises an exception before recording anything. Replay keeps expected business rejections in its own separate list. Accepted-but-odd settlements stay in the journal with a diagnostic. |
+| Compensating postings | Reversals looks up and checks the original event, then adds the opposite postings. The plain append stays the lower-level operation and never infers a reversal on its own. |
 
-## Applied in authorizations
+## Authorizations
 
-| Ambiguity | Decision |
+| Open question | Decision |
 | --- | --- |
-| Authorization decisions | Use the information available at processing time; preserve the outcome across historical revisions. A declined authorization stays declined after new credits. |
-| Hold amount and approval threshold | Require a strictly positive amount in the account's currency. Approve when the remaining available balance is zero or positive; declines create no active hold. |
-| Authorization timing | The API takes the current processing day, supplied by the caller. A hold starts at its recording sequence and is not backdated by a monetary value day. The event engine will carry the full input metadata. |
-| Available balance query | Require the value day and an explicit knowledge cutoff. Both ledger postings and hold decisions use the same prefix. The value day filters monetary postings; holds take effect at their recording sequence. |
-| Original closes versus later knowledge | Use the sequence saved at a daily close to reconstruct its available balance and decisions. An earlier value day combined with a later cutoff uses the holds known at that later prefix; it is not the original close. No authorization outcome is recalculated. |
-| Authorization identity | The ID is unique within its account, including after a decline or settlement. Rejecting a settlement for an unknown reference does not reserve that reference; a later authorization may introduce it. Different accounts can use the same ID. |
-| Repeated authorization event | The same event ID, day, account, authorization ID and amount return the stored outcome without reevaluation or another entry. Different data conflict. |
-| Decision storage | Journal.Entry keeps the original Request and immutable Effects containing postings, authorization states, diagnostics and accruals. Read holds from that history; maintain no second store of decisions or balances. |
-| Scope of the journal | Own retry detection and validate accounts, currencies and immutable effects before append. The operation supplies a calculation that runs only for new input and must not mutate the journal. |
-| Invalid request versus decline | Expected domain failures raise RequestRejectedException before append; Replay records those attempts. Insufficient availability is a valid declined decision, recorded in the journal. |
-| Hold lifecycle | Approved holds remain active until final settlement, with no implicit expiry. |
+| What a decision is based on | Whatever was known when it was made. It is never recalculated. A decline stays a decline after money arrives later. |
+| Amount and approval threshold | The amount must be positive and in the account's currency. Approve when applying the hold still leaves availability at zero or above. A decline holds nothing. |
+| When a hold takes effect | The caller supplies the current processing day. A hold starts at the moment it is recorded and is never backdated by a value day. |
+| Asking for available funds | The query needs both the value day and how much history it may see. The value day filters money movements; holds count from the point they were recorded. |
+| Original closes versus later knowledge | To rebuild an original close, use the sequence saved at that close. Pairing an old value day with a recent cutoff gives a different, legitimate view — not the original one. No decision is ever re-run. |
+| Authorization identity | An ID is unique within its account, and stays used after a decline or a settlement. Refusing a settlement for an unknown reference does not reserve that reference, so a later authorization may still introduce it. Two accounts may use the same ID. |
+| The same authorization sent twice | Same event ID, day, account, authorization ID and amount returns the stored outcome, with no re-evaluation and no second entry. Different content is a conflict. |
+| Where decisions live | In the journal entry, alongside the original request. Holds are read back from that history. There is no second store of decisions or balances to fall out of step. |
+| What the journal is responsible for | Spotting repeats, and checking accounts, currencies and effects before recording. The operation hands it a calculation that runs only for genuinely new input and must not modify the journal. |
+| An invalid request versus a decline | An invalid request raises a rejection before anything is recorded, and Replay logs the attempt. Not enough money is not an error — it is a valid decision, recorded in the journal. |
+| How a hold ends | An approved hold stays active until it is settled. Nothing expires on its own. |
 
-## Applied in settlements
+## Settlements
 
-| Ambiguity | Decision |
+| Open question | Decision |
 | --- | --- |
-| Settlement without authorization | Reject without a debit or hold change, as criterion 4 requires. Look up the reference within the requested account. Replay records the rejected attempt; no accepted journal entry is created. This replaces the earlier incompatible policy. |
-| Settlement after a decline | Accept the debit with DECLINED_AUTHORIZATION. Criterion 4 covers absent references; this reference is present. The declined state remains unchanged and other holds remain active. |
-| Final versus partial settlement | Treat each accepted settlement as final and allow one per account and recorded authorization reference. Partial captures are outside this increment; the brief does not specify their lifecycle. |
-| Settlement amount versus hold | Charge the actual positive amount and release the whole approved hold, even when the amounts differ. Available funds do not limit settlement amounts. |
-| Atomic settlement and stored hold amount | Append the debit and a new SETTLED state together. Preserve the original hold amount in that state; the request and posting contain the settled amount. No earlier record changes. |
-| Hold release timing | Release at the settlement's recording sequence; apply the debit at its own value day. Saved earlier cutoffs retain the hold, including for backdated or future-value settlements. |
-| Historical authorization states | decisions(cutoff) returns all recorded states; states(cutoff) projects the latest per account and ID, in first-seen order. Only a latest APPROVED state reserves funds. |
-| Invalid settlement | Require a nonblank reference, a positive amount, a valid account, matching currency and positive days. A failed request records neither a debit nor a hold release. |
-| Settlement retry | Journal compares the complete original Request, including both dates. An identical retry returns its original entry before recalculating state or checking for a second settlement. |
-| Authorization arrives after a rejected settlement | An explicit retry may succeed once the matching authorization exists. Preserve the original settlement dates and the earlier rejection; do not retry automatically. |
-| Diagnostic context | Store anomaly codes in immutable Effects. Account, event ID, authorization reference and dates are already in the same entry's Request. |
+| Settlement with no authorization | Refuse it, with no debit and no change to any hold, as criterion 4 requires. The reference is looked up within the requested account. Replay logs the attempt; no entry is created. |
+| Settlement after a decline | Accept the debit and attach a `DECLINED_AUTHORIZATION` note. Criterion 4 is about references that are absent; this one is present. The decline stands, and other holds stay active. |
+| Final or partial | Every accepted settlement is final, and one is allowed per account and reference. Partial captures are out of scope — the brief does not describe their lifecycle. |
+| Amount different from the hold | Charge the actual amount and release the whole hold, even when the two differ. Available funds do not cap a settlement. |
+| Recording the debit and the release | Both go in together, in one entry. The new state keeps the *original* hold amount; the request and the posting carry the settled amount. No earlier record changes. |
+| When the hold is released | At the moment the settlement is recorded, while the debit lands on its own value day. Earlier saved views still show the hold, including for backdated or future-dated settlements. |
+| Reading past states | One query returns every recorded state; another keeps only the latest per account and reference, in the order first seen. Only a latest *approved* state reserves money. |
+| Invalid settlements | Require a non-blank reference, a positive amount, a real account, a matching currency and positive days. A failed request records neither a debit nor a release. |
+| The same settlement sent twice | The journal compares the whole original request, both dates included. An identical repeat returns its original entry before any state is recalculated or any second-settlement check runs. |
+| The authorization turns up later | An explicit retry may then succeed. The original settlement dates and the earlier rejection are both kept. Nothing retries by itself. |
+| Context for a diagnostic | The code is stored with the effects. The account, event ID, reference and dates are already on the same entry's request, so they are not copied. |
 
-## Applied in reversals
+## Reversals
 
-| Ambiguity | Decision |
+| Open question | Decision |
 | --- | --- |
-| Reversal amount and currency | Derive both from the original postings. The caller supplies a reference, not a second amount that could disagree. |
-| Eligible reference | Require an already recorded event with at least one posting. Reject unknown or self references, hold-only entries and empty entries. The original booked day need not be earlier: recording sequence determines what is known. |
-| Account scope | Every original posting must belong to the requested account. Reject multi-account entries as a whole; do not silently reverse only some postings. |
-| Installments and partial reversal | Reverse every posting in its original order, preserving exact minor units. Partial amounts are unsupported; all compensations share one sequence. |
-| Reversal value day | Apply the requested value day to every compensation. E9 specifies Day 2. A later value day is allowed but will not restore earlier daily balances; reversal is a dated posting, not deletion. |
-| One reversal per event | Reject a second full reversal under a new event ID. Recover that fact from recorded Reversal requests, without a mutable flag on the original. |
-| Reversal of a reversal | Reject it. The chosen lifecycle supports one compensation of an original monetary event, without chains of reversal references. |
-| Reversing credits or settlements | Negate their postings without checking availability. Refund a settlement without reopening its hold, permitting another capture or copying its diagnostic; the original states and anomalies stay in the journal. |
-| Fees and authorization decisions | Compensate only postings in the referenced entry. Separate fees and recorded authorization decisions are not recalculated. DailyClosingTest now verifies this with the full event stream and actual fee assessments. |
-| Retry and invalid input | Journal compares the original Request before computing effects. Changes to account, reference or either date conflict. Invalid requests append nothing and consume neither the event ID nor the original event's reversal allowance. |
-| Reference lookup and historical views | Journal.find shares event lookup with retry detection and requires an explicit cutoff. A later reversal cannot alter an earlier prefix or the original entry. |
+| Amount and currency | Both come from the original postings. The caller gives a reference, not a second amount that could disagree with the first. |
+| What can be reversed | An already recorded event with at least one posting. Unknown references, self-references, hold-only entries and empty entries are all refused. The original booked day need not be earlier — what matters is what was already recorded. |
+| Which account | Every posting in the original must belong to the requested account. A multi-account entry is refused as a whole rather than partly reversed. |
+| Installments and partial reversal | Every posting is reversed, in its original order, to the exact minor unit. Partial amounts are not supported, and all the compensating postings share one sequence. |
+| The value day of a reversal | The requested value day applies to every compensating posting. E9 asks for Day 2. A later day is allowed but will not restore earlier daily balances: a reversal is a dated posting, not a deletion. |
+| Reversing twice | A second full reversal under a new event ID is refused. That fact is recovered from the recorded reversal requests, with no flag set on the original entry. |
+| Reversing a reversal | Refused. The chosen lifecycle allows one compensation of an original event, without chains. |
+| Reversing credits or settlements | Their postings are negated with no availability check. Refunding a settlement does not reopen its hold, allow another capture, or copy its diagnostic. The original states and notes stay where they are. |
+| Fees and hold decisions | Only the postings in the referenced entry are compensated. Separately assessed fees and recorded decisions are left alone. |
+| Repeats and invalid input | The journal compares the original request before calculating anything. A changed account, reference or date is a conflict. An invalid request records nothing and uses up neither the event ID nor the original event's one allowed reversal. |
+| Looking up the reference | The same lookup used for repeat detection, with an explicit cutoff. A later reversal cannot change an earlier view or the original entry. |
 
-## Applied in daily closes and fees
+## Daily closes and fees
 
-| Ambiguity | Decision |
+| Open question | Decision |
 | --- | --- |
-| Close granularity and order | Close one account at a time, in consecutive days starting at Day 1. The caller supplies explicit event IDs. The scenario closes both accounts after E2, E3, E4, E6, E8 and E10, for days 1–6. |
-| Storage of closes | Request.DayClose identifies the account and its booked day is the day closed. Record the marker even when no fee is due. Its entry sequence preserves the original close, including fees and accruals. Close and fee-reassessment entries contain only fee monetary postings; interest capitalization uses a separate entry. |
-| Revised closes | Reassessment adds a Request.FeeReassessment entry; it does not replace the original close or advance the last closed day. At least one day must already be closed. |
-| Processing date versus booked date of an input | The caller supplies the actual processing day to reassess. It must not precede the last closed day. E10 keeps booked Day 5 in its own entry, but its reassessment occurs on Day 6. |
-| When to reassess | The caller invokes reassess after a backdated posting and before the next event. The current open day is assessed only when closed. There are no hidden callbacks that modify the journal during an append. |
-| Range and order of reassessment | Recheck all closed days from Day 1, in chronological order. For this small window, a full scan avoids additional range-tracking state and also catches missed earlier assessments when closing a new day. |
-| Fee basis and cascading effects | Use the ledger balance at the current cutoff, plus newly calculated earlier fees in the same operation. Existing fees already enter the ledger balance. Active holds do not determine fee eligibility. |
-| Once-per-day rule | Read assessed value days from the fee postings in close and reassessment entries. An explicit refund leaves the original assessment present, so that day cannot be charged twice. |
-| Atomic fee calculation | Calculate all new fees and the resulting accruals locally, then append them with the close or reassessment marker in one immutable entry. A failed calculation records no partial fees or accruals and consumes no event ID. |
-| Date and amount of historical fees | Debit AED 25.00 per negative value day, booked on the processing day when discovered. The Day 2 fee leaves Day 3 at positive AED 5.00 after E7, so no Day 3 fee is due. |
-| Fees after a reversal | Retain already assessed fees. E9 compensates E7's principal only; it does not imply refunds of separate entries. Refuse criterion 6 as an automatic-restoration claim under this scope. Explicit refunds would be compatible with append-only, but the brief supplies no automatic fee-refund policy and this implementation does not introduce one. |
-| Snapshot and fee queries | Use the saved close sequence to reconstruct the original balance and authorization states. fees(accountId, cutoff) returns an immutable list of original fee postings for that account, excluding later compensating credits. |
-| Repeated close or reassessment | Identical requests return the original entry without recalculating. A new request may reassess a closed day, but may not close it again. Changed account, day or request type conflicts with a reused event ID. |
-| BHD overdraft fee | Unspecified. A negative BHD assessment fails atomically; zero and positive BHD balances close normally. This component deliberately has no invented BHD rate or currency conversion. |
-| Deliberately failing test | FeeTimingCounterexample runs explicitly with -Dtest=FeeTimingCounterexample and fails on AED 0.00 versus -25.00. It exposes how retaining assessed fees makes reversal timing matter; the ordinary suite excludes it by name. |
+| What a close covers, and in what order | One account at a time, on consecutive days from Day 1, with the caller supplying the event IDs. The scenario closes both accounts after E2, E3, E4, E6, E8 and E10. |
+| How closes are stored | A close names its account, and its booked day is the day being closed. The marker is recorded even when no fee is due, and its sequence preserves that close along with its fees and accruals. Closes and reassessments carry fee postings only; capitalization gets its own entry. |
+| Revised closes | A reassessment is a new entry. It does not replace the original close and does not move the last-closed day forward. At least one day must already be closed. |
+| Processing day versus booked day | The caller passes the real processing day to a reassessment, and it may not be earlier than the last closed day. E10 keeps its booked Day 5, but the reassessment it triggers happens on Day 6. |
+| When to reassess | The caller asks for it after a backdated posting and before the next event. The current open day is only assessed when it closes. Nothing modifies the journal behind the caller's back during an append. |
+| How far back to check | Every closed day from Day 1, in order. Over a six-day window a full pass avoids keeping extra range-tracking state, and it also catches anything missed earlier. |
+| What a fee is based on | The ledger balance at the current cutoff, plus any earlier fees calculated in the same operation. Fees already recorded are part of the balance. Holds play no part. |
+| Once per day | Assessed days are read back from the fee postings already in close and reassessment entries. An explicit refund leaves the original assessment in place, so that day still cannot be charged twice. |
+| Calculating fees safely | All new fees and the resulting accruals are worked out first, then recorded together with the marker in one entry. A failed calculation leaves no partial fees and uses no event ID. |
+| Date and amount | AED 25.00 for each negative value day, booked on the day it was discovered. After E7, the Day 2 fee leaves Day 3 at positive AED 5.00, so Day 3 is not charged. |
+| Fees after a reversal | Already assessed fees stay. E9 compensates E7's principal and nothing else. Explicit refunds would sit comfortably with an append-only design, but the brief gives no automatic refund policy and none is invented here. |
+| Reading fees back | Use the saved close sequence to rebuild the original balance and states. The fee query returns the original fee postings for an account, and does not net off later compensating credits. |
+| Repeating a close or reassessment | An identical request returns the original entry without recalculating. A new request may reassess a closed day, but may not close it a second time. A changed account, day or type conflicts with a reused ID. |
+| No dinar overdraft fee | The brief does not give one. A negative BHD balance that would need a fee fails the close, as a whole, changing nothing. Zero and positive BHD balances close normally. No rate is invented and nothing is converted. |
 
-## Applied in interest
+## Interest
 
-| Ambiguity | Decision |
+| Open question | Decision |
 | --- | --- |
-| Interest rounding | HALF_EVEN, at the account's precision. The choice matters in the half-way cases, which the brief does not define. |
-| Interest basis | Positive closing ledger balances after fees, excluding holds. Include newly calculated fees only from their value day. Day 6 interest is computed before capitalization. |
-| When accruals are recorded | DailyClosing.close and reassess calculate fees first, then accruals, and append both atomically. No separate accrual command or mutable cache is needed. |
-| Backdated interest | Append a complete set of accruals for all closed days on every close or reassessment. Include zero amounts and unchanged days. For six days, a complete snapshot is simpler than merging per-day corrections or summing signed deltas. Earlier sets remain unchanged. |
-| Historical accrual query | Interest.accruals(accountId, cutoff) returns the last complete set at the explicit cutoff, in day order, or an empty list before the first close. Each set belongs to exactly one account. Do not sum sets from different revisions. |
-| Spendability | Accrual is a separate fact in Effects, validated against the account's currency. Only capitalization creates a posting; accruing interest never changes ledger or available balance. |
-| Capitalized total | Sum the six rounded daily accruals exactly. Do not round the sum of unrounded products or discard a difference. Each account receives one posting booked and valued on Day 6. |
-| Zero total | Record a zero posting and the capitalization marker. This explicitly finalizes the window even when no interest was earned. |
-| Preconditions for capitalization | Require all six daily closes and an up-to-date set of accruals. A later posting affecting the account on or before Day 6 requires reassessment first, even if its rounded interest effect would be zero. Other accounts and future value days do not invalidate the set. |
-| Finalization and later events | Capitalize only after the input stream, including E10. Freeze accruals afterward: further closes or reassessments fail. The low-level journal can still accept postings, but this component does not reopen finalized interest or correct it automatically. Post-capitalization adjustments are outside the specified window. |
-| Capitalization retries and reversal | Journal handles retries before finalization checks. Another event ID cannot capitalize the same account again. Explicit reversal compensates a capitalization posting without deleting its marker or permitting another capitalization. |
-| Window scope | This policy supports days 1–6 and one capitalization per account. Multiple periods and configurable schedules are outside the brief; the journal itself retains generic value days. |
+| Rounding | Half-even, at the account's precision. It only matters for exact halves, which the brief does not address. |
+| What earns interest | Positive closing balances after fees, ignoring holds. New fees count from their own value day. Day 6 interest is worked out before capitalization. |
+| When accruals are recorded | Every close and reassessment calculates fees first, then accruals, and records both together. There is no separate accrual command and no cache to go stale. |
+| Backdated interest | Each close or reassessment records a complete set of accruals for every closed day, zero amounts and unchanged days included. Over six days a full snapshot is simpler than merging per-day corrections. Earlier sets are left untouched. |
+| Reading accruals back | The query returns the most recent complete set at the given cutoff, in day order, or nothing before the first close. Each set belongs to one account. Sets from different revisions must never be added together. |
+| Can accrued interest be spent | No. An accrual is a recorded fact, checked against the account's currency, and it changes no balance. Only capitalization creates an actual posting. |
+| The capitalized total | Exactly the sum of the six rounded daily accruals. The unrounded products are not re-added and re-rounded, and no difference is discarded. Each account gets one posting, booked and valued on Day 6. |
+| A total of zero | Still recorded, as a zero posting plus the marker, so the window is explicitly finished even when nothing was earned. |
+| What must be true first | All six days closed, and an up-to-date set of accruals. A later posting affecting the account on or before Day 6 forces a reassessment first, even when the interest effect would round to zero. Other accounts and later value days do not invalidate the set. |
+| After capitalization | Accruals are frozen: further closes and reassessments fail. The journal underneath still accepts postings, but this component will not reopen finished interest or correct it by itself. Corrections after the window are out of scope. |
+| Repeats and reversal | Repeat detection runs before the finality checks. A different event ID cannot capitalize the same account twice. An explicit reversal can compensate the posting without erasing the marker or unlocking another capitalization. |
+| How wide the policy is | Days 1 to 6, one capitalization per account. Multiple periods and configurable schedules are outside the brief; the journal itself keeps ordinary value days. |
 
-## Applied in rejected attempts
+## Rejected attempts
 
-| Ambiguity | Decision |
+| Open question | Decision |
 | --- | --- |
-| Where to record a rejection | Replay owns a private append-only list of Rejection(processingDay, request, reason). The journal continues to contain accepted effects only, so failed settlement or reversal requests cannot affect lifecycle projections. |
-| Processing date | Record the caller-supplied positive processing day separately from Request.bookedDay. Dispatch preserves the request's dates and fields. The caller supplies the appropriate dates for holds, closes and reassessments; Replay does not schedule them or rewrite input metadata. |
-| Expected failure versus programming error | Catch only RequestRejectedException, a subtype of IllegalArgumentException used by domain checks. Do not broadly catch runtime exceptions. For example, a null hold amount still raises NullPointerException and stops processing. |
-| Input boundary | Accept an already constructed Request. Invalid top-level IDs, dates, money precision or null lists can fail during construction before process is called; raw-input parsing and recording those failures are outside this typed API. An invalid processing day or null request is a caller error and is not added to the rejection log. |
-| Successful handling | process returns true for an accepted request or identical accepted retry, including authorization declines and accepted settlement diagnostics. It returns false after recording an expected rejection, allowing the caller to continue. |
-| Retry after rejection | A failed attempt reserves neither an event ID nor a journal sequence. Repeating it records another failure if still invalid; it can succeed if corrected or if the missing prerequisite arrives. The prior attempts stay immutable. |
-| Conflicting event ID | Preserve the accepted event and record each conflicting submission separately. Do not overwrite it or duplicate Journal's request comparison. A later identical retry of the accepted request still succeeds. |
-| Failure context | Keep the original Request and the exception's explanatory message. No stack trace, mutable Throwable or second copy of monetary data is stored. |
-| Scope and snapshots | Keep one Replay instance per run. rejections() returns an immutable copy in attempt order. Save that copy with each close's journal cutoff; rejected attempts do not advance journal sequences, so a cutoff alone cannot reconstruct their history. A new Replay instance starts a new rejection log. |
-| Shared currency validation | Authorizations uses Journal's account-currency check before arithmetic so a wrong-currency hold raises the same expected rejection as other operations. Money remains a general arithmetic value type. |
-| Capitalization input date | The dispatcher passes the submitted booked day to Interest, which validates Day 6 inside Journal's lazy calculation. Rejected or conflicting requests retain their actual input date; the public convenience method still supplies Day 6. |
+| Where a rejection goes | Replay keeps its own append-only list of the processing day, the request and the reason. The journal holds accepted effects only, so a failed settlement or reversal can never influence a later lifecycle check. |
+| Which date is recorded | The caller's processing day, kept separate from the request's booked day. Replay passes dates and fields through unchanged; it does not schedule anything or rewrite input. |
+| Expected failure versus programming mistake | Only the domain rejection type is caught. Runtime faults are not swallowed — a null amount, for example, still stops processing. |
+| Where input checking stops | Replay takes an already-built request. Bad IDs, dates, precision or null lists can fail while the request is being built, before Replay sees it. Parsing raw input, and logging failures there, is outside this boundary. An invalid processing day or a null request is a caller mistake and is not logged as a rejection. |
+| What counts as handled | Processing reports success for an accepted request or an identical accepted repeat, including declines and accepted diagnostics. It reports failure after logging an expected rejection, so the caller can continue. |
+| Retrying after a rejection | A failed attempt claims neither an event ID nor a sequence. Repeating it logs another failure while it stays invalid, and it can succeed once corrected or once the missing prerequisite arrives. Earlier attempts are never altered. |
+| A conflicting event ID | The accepted event stands, and each conflicting submission is logged separately. The journal's comparison is not duplicated here. A later identical repeat of the accepted request still succeeds. |
+| What is kept about a failure | The original request and the explanatory message. No stack trace, no mutable exception, no second copy of the amounts. |
+| Scope and snapshots | One Replay per run. The rejection list is handed out as an unmodifiable copy in attempt order. Save that copy alongside each close's cutoff: rejected attempts do not move the journal forward, so a cutoff alone cannot reconstruct them. A new Replay starts a new log. |
+| Checking currency in one place | Authorizations uses the journal's account-currency check before doing arithmetic, so a wrong-currency hold fails the same way as everything else. Money stays a general-purpose value type. |
+| The date on a capitalization | The dispatcher passes the submitted booked day through, and the Day 6 rule is checked inside the calculation. A rejected or conflicting request keeps its actual date; the convenience method still supplies Day 6. |
 
-## Applied in the executable scenario
+## The runnable scenario
 
-| Ambiguity | Decision |
+| Open question | Decision |
 | --- | --- |
-| Scenario representation | Keep the ten typed input requests in Scenario.run, grouped by actual processing day, with explicit backdated reassessments. endDay closes both accounts, capitalizes after the Day 6 closes and captures the report boundary. Do not sort by booked day. |
-| E10 and the day boundary | E10 is processed on Day 6 after E9, with booked and value Day 5. Reassess ACC-002 on Day 6 before closing that day and capitalizing. |
-| Close and capitalization IDs | Generate CLOSE-account-day and INTEREST-account. Retain E7-FEES, E9-FEES and E10-FEES for reassessments. These derived IDs are distinct from E1–E10 and stable across runs. |
-| Executable state | Each invocation creates the two accounts, a new Journal and one Replay. Component instances used for dispatch read the same journal; rejected attempts remain in that run's Replay. |
-| Daily output | Print both accounts for every day: original closing ledger and available balances, revised closing balance, newly assessed fees with their value days, original authorization states, errors and accepted diagnostics. Preserve currency precision. |
-| Rejections while driving the scenario | Replay records expected failures and continues. The report displays each failed attempt once, on the day it was received, with its event ID and reason. E6 is the sole rejection; Auth-B's decline is an accepted decision. |
-| Runnable command | run.sh changes to the project directory, compiles with Maven offline and invokes the Java main class. No new build plugin or runtime dependency is required. Prime the dependency cache with mvn test when needed. |
-| One complete scenario definition | Move the complete input sequence out of DailyClosingTest into Scenario. The test now uses recorded event and close cutoffs from that same executable scenario, retaining its assertions without duplicating the stream. |
+| How the scenario is written | The ten typed requests sit in one method, grouped by the day they are actually processed, with reassessments written out explicitly. Ending a day closes both accounts, capitalizes after the Day 6 closes, and saves the report boundary. Nothing is sorted by booked day. |
+| E10 and the day boundary | E10 is processed on Day 6, after E9, with booked and value Day 5. ACC-002 is reassessed on Day 6 before that day closes and interest is capitalized. |
+| Generated event IDs | Closes and capitalizations get predictable generated IDs, and the reassessments keep theirs. All are distinct from E1–E10 and stable between runs. |
+| State per run | Every run builds the two accounts, one journal and one Replay. The operations all read that journal, and rejected attempts stay with that run. |
+| What is printed each day | Both accounts, every day: the original closing and available balances, the revised closing balance, newly assessed fees with their value days, the hold states as they stood, errors and accepted diagnostics — at full currency precision. |
+| Rejections during the run | Replay logs the failure and carries on. Each failed attempt is shown once, on the day it arrived, with its ID and reason. E6 is the only rejection; Auth-B's decline is a valid decision, not an error. |
+| The runnable command | The script builds offline with Maven and runs the main class. No extra build plugin or runtime dependency is needed; run the test suite once to populate the dependency cache. |
+| One definition of the scenario | The scenario is defined once and used by both the command and the test. Financial assertions reuse its recorded cutoffs rather than restating the stream. Individual close and fee rules are covered by their own test. |
 
-## Applied in daily reporting
+## Daily reporting
 
-| Ambiguity | Decision |
+| Open question | Decision |
 | --- | --- |
-| Saved daily boundary | Capture one immutable journal cutoff and a copy of the cumulative rejection list after each day's operations. Save days in chronological order using one journal and one replay. DailyReport reads these prefixes without storing another balance or decision model. |
-| Original versus revised balances | Closing and available use that day's saved cutoff. Revised closing uses the last saved cutoff for the same value day. Print both cutoffs in the report headings; later postings outside the saved window cannot change either view. |
-| Day 6 capitalization | Capture Day 6 only after both accounts close and receive their capitalization entries. Its displayed ledger and available balances include interest; earlier value days do not. |
-| Fee presentation | Display assessments added since the previous saved cutoff, using DailyClosing.fees. Show the positive charge amount and its value day. E7's three fees appear on processing Day 5 with value days 2, 4 and 5; they are not copied into earlier original closes. |
-| Error timing and repeated attempts | Use the difference between successive rejection prefixes, preserving repeated failures. Booked day does not assign an attempt to a report day. Capture requires the full cumulative rejection snapshot from the same replay. |
-| Accepted diagnostics | Show diagnostics from journal entries added since the previous cutoff. Keep these distinct from rejected attempts and preserve arrival order even for backdated requests. |
-| Historical authorization states | Show states at each original close. Auth-A remains APPROVED in Days 2 and 3, then SETTLED. Auth-B remains DECLINED after E9. The report does not reevaluate decisions using revised balances. |
-| Rendering | Print to a supplied PrintStream so the command uses System.out and tests capture output without replacing global stdout. Rendering makes no journal writes. An empty report prints nothing. |
+| Saving a day | After each day's work, save one journal cutoff and a copy of the running rejection list. Days are saved in order, from one journal and one Replay. The report reads those saved points and keeps no balance model of its own. |
+| Original versus revised | Closing and available balances use that day's saved cutoff. The revised closing balance uses the last saved cutoff for the same value day. Both cutoffs are printed, so later postings cannot silently change either view. |
+| Day 6 | Saved only after both accounts have closed and been capitalized, so its balances include interest while earlier days do not. |
+| Showing fees | Show what was added since the previous saved point, as a positive charge with its value day. E7's three fees appear on processing Day 5 with value days 2, 4 and 5, and are not copied back into earlier closes. |
+| Errors and repeated attempts | Take the difference between consecutive saved rejection lists, keeping repeats. Booked day plays no part in deciding which report day an attempt belongs to. |
+| Accepted diagnostics | Show those from entries added since the previous cutoff, kept separate from rejections, in arrival order even for backdated requests. |
+| Hold states | Show them as they stood at each original close. Auth-A is approved on Days 2 and 3, then settled; Auth-B stays declined after E9. Decisions are never re-evaluated against revised balances. |
+| Table layout | One ASCII table per day, one row per account. Currency applies to every amount in the row, including fees. Columns fit the full contents and balance columns align right. Errors and diagnostics appear below the table. |
+| Where output goes | To a stream supplied by the caller, so the command uses standard output and tests can capture it without touching global state. Printing never writes to the journal, and an empty report prints nothing. |
+
+## Package layout
+
+| Open question | Decision |
+| --- | --- |
+| Boundaries | `domain` holds monetary values, `core` holds the ledger and request processing, and `scenario` holds the runnable stream and report. `domain` stands alone, `core` uses it, `scenario` uses both. |
+| Keeping internals internal | The journal and the accounting operations share a package, so their shared methods stay package-private. Replay sits in `core` because it processes arbitrary requests. |
+| Tests | Mirror the production packages. Whole-stream financial assertions live with the scenario, so the core tests neither depend on it nor force extra methods open. |
