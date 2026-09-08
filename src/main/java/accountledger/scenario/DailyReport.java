@@ -40,7 +40,7 @@ public final class DailyReport {
             return;
         }
         var last = days.getLast();
-        out.println("Closing and available use each day's saved close.");
+        out.println("Closing, on hold and available use each day's saved close.");
         out.printf("Revised closing uses the final saved close: Day %d (sequence %d).%n", last.day(), last.cutoff());
         IntStream.range(0, days.size()).forEach(index -> {
             var previous = index == 0 ? new Snapshot(0, 0, List.of()) : days.get(index - 1);
@@ -54,6 +54,8 @@ public final class DailyReport {
         out.printf("%nDay %d (sequence %d)%n", current.day(), current.cutoff());
         var rows = accounts.stream().map(account -> {
             var balance = journal.balance(account, current.day(), current.cutoff());
+            var available = authorizations.available(account, current.day(), current.cutoff());
+            var onHold = balance.subtract(available);
             var fees = summarize(closing.fees(account, current.cutoff()).stream()
                     .skip(closing.fees(account, previous.cutoff()).size())
                     .map(fee -> amount(fee.delta().negate()) + " (Day " + fee.valueDay() + ")"));
@@ -61,7 +63,7 @@ public final class DailyReport {
                     .filter(auth -> auth.accountId().equals(account))
                     .map(auth -> auth.id() + "=" + auth.status()));
             return List.of(account, balance.currency().name(), amount(balance),
-                    amount(authorizations.available(account, current.day(), current.cutoff())),
+                    amount(onHold), amount(available),
                     amount(journal.balance(account, current.day(), revisedCutoff)), fees, states);
         }).toList();
         printAccounts(out, rows);
@@ -74,14 +76,14 @@ public final class DailyReport {
     }
 
     private static void printAccounts(PrintStream out, List<List<String>> rows) {
-        var headers = List.of("Account", "Currency", "Closing", "Available", "Revised closing",
+        var headers = List.of("Account", "Currency", "Closing", "On hold", "Available", "Revised closing",
                 "Fees (value day)", "Authorizations");
         var widths = IntStream.range(0, headers.size()).map(column ->
                 Stream.concat(Stream.of(headers), rows.stream())
                         .mapToInt(row -> row.get(column).length()).max().orElseThrow()).toArray();
-        // The three balance columns are right-aligned; labels and states are left-aligned.
+        // Balances and held amounts are right-aligned; labels and states are left-aligned.
         var format = IntStream.range(0, widths.length)
-                .mapToObj(column -> "%" + (column >= 2 && column <= 4 ? "" : "-") + widths[column] + "s")
+                .mapToObj(column -> "%" + (column >= 2 && column <= 5 ? "" : "-") + widths[column] + "s")
                 .collect(joining(" | ", "| ", " |%n"));
         var border = IntStream.of(widths).mapToObj(width -> "-".repeat(width + 2))
                 .collect(joining("+", "+", "+"));

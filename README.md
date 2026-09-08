@@ -24,123 +24,118 @@ mvn test
 The first command runs the suite and downloads build dependencies if needed.
 `run.sh` compiles offline using that cache, then launches the scenario.
 
-## Booked Event Details
-
-E1 — Day 1 — CREDIT — ACC-001 AED 1,200.00 — value_date Day 1
-E2 — Day 1 — DEBIT — ACC-001 AED 950.00 — value_date Day 1
-E3 — Day 2 — AUTHORIZATION — ACC-001 Auth-A hold AED 200.00 — value_date Day 2
-E4 — Day 3 — CREDIT — ACC-001 AED 400.00 — value_date Day 3
-E5 — Day 4 — SETTLEMENT — ACC-001 Auth-A settles for AED 185.00 — value_date Day 4
-E6 — Day 4 — SETTLEMENT — ACC-001 Auth-Z settles for AED 180.00 — value_date Day 4 (Auth-Z has no preceding authorization event)
-E7 — Day 5 — DEBIT — ACC-001 AED 620.00 — value_date Day 2
-E8 — Day 5 — AUTHORIZATION — ACC-001 Auth-B hold AED 90.00 — value_date Day 5
-E9 — Day 6 — REVERSAL — ACC-001 reverses E7 — value_date Day 2
-E10 — Day 5 — CREDIT — ACC-002 BHD 10.000, posted as three equal instalments — value_date Day 5Auth-B is never settled inside the window.
-
-
-
 ## Expected output
 
 ```text
-Closing and available use each day's saved close.
-Revised closing uses the final saved close: Day 6 (sequence 26).
 
 Day 1 (sequence 4)
-+---------+----------+---------+-----------+-----------------+------------------+----------------+
-| Account | Currency | Closing | Available | Revised closing | Fees (value day) | Authorizations |
-+---------+----------+---------+-----------+-----------------+------------------+----------------+
-| ACC-001 | AED      |  250.00 |    250.00 |          250.00 | none             | none           |
-| ACC-002 | BHD      |   0.000 |     0.000 |           0.000 | none             | none           |
-+---------+----------+---------+-----------+-----------------+------------------+----------------+
++---------+----------+---------+---------+-----------+-----------------+------------------+----------------+
+| Account | Currency | Closing | On hold | Available | Revised closing | Fees (value day) | Authorizations |
++---------+----------+---------+---------+-----------+-----------------+------------------+----------------+
+| ACC-001 | AED      |  250.00 |    0.00 |    250.00 |          250.00 | none             | none           |
+| ACC-002 | BHD      |   0.000 |   0.000 |     0.000 |           0.000 | none             | none           |
++---------+----------+---------+---------+-----------+-----------------+------------------+----------------+
   Errors: none
   Diagnostics: none
 
 Day 2 (sequence 7)
-+---------+----------+---------+-----------+-----------------+------------------+-----------------+
-| Account | Currency | Closing | Available | Revised closing | Fees (value day) | Authorizations  |
-+---------+----------+---------+-----------+-----------------+------------------+-----------------+
-| ACC-001 | AED      |  250.00 |     50.00 |          225.00 | none             | Auth-A=APPROVED |
-| ACC-002 | BHD      |   0.000 |     0.000 |           0.000 | none             | none            |
-+---------+----------+---------+-----------+-----------------+------------------+-----------------+
++---------+----------+---------+---------+-----------+-----------------+------------------+-----------------+
+| Account | Currency | Closing | On hold | Available | Revised closing | Fees (value day) | Authorizations  |
++---------+----------+---------+---------+-----------+-----------------+------------------+-----------------+
+| ACC-001 | AED      |  250.00 |  200.00 |     50.00 |          225.00 | none             | Auth-A=APPROVED |
+| ACC-002 | BHD      |   0.000 |   0.000 |     0.000 |           0.000 | none             | none            |
++---------+----------+---------+---------+-----------+-----------------+------------------+-----------------+
   Errors: none
   Diagnostics: none
 
 Day 3 (sequence 10)
-+---------+----------+---------+-----------+-----------------+------------------+-----------------+
-| Account | Currency | Closing | Available | Revised closing | Fees (value day) | Authorizations  |
-+---------+----------+---------+-----------+-----------------+------------------+-----------------+
-| ACC-001 | AED      |  650.00 |    450.00 |          625.00 | none             | Auth-A=APPROVED |
-| ACC-002 | BHD      |   0.000 |     0.000 |           0.000 | none             | none            |
-+---------+----------+---------+-----------+-----------------+------------------+-----------------+
++---------+----------+---------+---------+-----------+-----------------+------------------+-----------------+
+| Account | Currency | Closing | On hold | Available | Revised closing | Fees (value day) | Authorizations  |
++---------+----------+---------+---------+-----------+-----------------+------------------+-----------------+
+| ACC-001 | AED      |  650.00 |  200.00 |    450.00 |          625.00 | none             | Auth-A=APPROVED |
+| ACC-002 | BHD      |   0.000 |   0.000 |     0.000 |           0.000 | none             | none            |
++---------+----------+---------+---------+-----------+-----------------+------------------+-----------------+
   Errors: none
   Diagnostics: none
 
 Day 4 (sequence 13)
-+---------+----------+---------+-----------+-----------------+------------------+----------------+
-| Account | Currency | Closing | Available | Revised closing | Fees (value day) | Authorizations |
-+---------+----------+---------+-----------+-----------------+------------------+----------------+
-| ACC-001 | AED      |  465.00 |    465.00 |          415.00 | none             | Auth-A=SETTLED |
-| ACC-002 | BHD      |   0.000 |     0.000 |           0.000 | none             | none           |
-+---------+----------+---------+-----------+-----------------+------------------+----------------+
++---------+----------+---------+---------+-----------+-----------------+------------------+----------------+
+| Account | Currency | Closing | On hold | Available | Revised closing | Fees (value day) | Authorizations |
++---------+----------+---------+---------+-----------+-----------------+------------------+----------------+
+| ACC-001 | AED      |  465.00 |    0.00 |    465.00 |          415.00 | none             | Auth-A=SETTLED |
+| ACC-002 | BHD      |   0.000 |   0.000 |     0.000 |           0.000 | none             | none           |
++---------+----------+---------+---------+-----------+-----------------+------------------+----------------+
   Errors: E6: Unknown authorization: Auth-Z
   Diagnostics: none
 
 Day 5 (sequence 18)
-+---------+----------+---------+-----------+-----------------+---------------------------------------------+---------------------------------+
-| Account | Currency | Closing | Available | Revised closing | Fees (value day)                            | Authorizations                  |
-+---------+----------+---------+-----------+-----------------+---------------------------------------------+---------------------------------+
-| ACC-001 | AED      | -230.00 |   -230.00 |          390.00 | 25.00 (Day 2); 25.00 (Day 4); 25.00 (Day 5) | Auth-A=SETTLED; Auth-B=DECLINED |
-| ACC-002 | BHD      |   0.000 |     0.000 |          10.000 | none                                        | none                            |
-+---------+----------+---------+-----------+-----------------+---------------------------------------------+---------------------------------+
++---------+----------+---------+---------+-----------+-----------------+---------------------------------------------+---------------------------------+
+| Account | Currency | Closing | On hold | Available | Revised closing | Fees (value day)                            | Authorizations                  |
++---------+----------+---------+---------+-----------+-----------------+---------------------------------------------+---------------------------------+
+| ACC-001 | AED      | -230.00 |    0.00 |   -230.00 |          390.00 | 25.00 (Day 2); 25.00 (Day 4); 25.00 (Day 5) | Auth-A=SETTLED; Auth-B=DECLINED |
+| ACC-002 | BHD      |   0.000 |   0.000 |     0.000 |          10.000 | none                                        | none                            |
++---------+----------+---------+---------+-----------+-----------------+---------------------------------------------+---------------------------------+
   Errors: none
   Diagnostics: none
 
 Day 6 (sequence 26)
-+---------+----------+---------+-----------+-----------------+------------------+---------------------------------+
-| Account | Currency | Closing | Available | Revised closing | Fees (value day) | Authorizations                  |
-+---------+----------+---------+-----------+-----------------+------------------+---------------------------------+
-| ACC-001 | AED      |  390.93 |    390.93 |          390.93 | none             | Auth-A=SETTLED; Auth-B=DECLINED |
-| ACC-002 | BHD      |  10.008 |    10.008 |          10.008 | none             | none                            |
-+---------+----------+---------+-----------+-----------------+------------------+---------------------------------+
++---------+----------+---------+---------+-----------+-----------------+------------------+---------------------------------+
+| Account | Currency | Closing | On hold | Available | Revised closing | Fees (value day) | Authorizations                  |
++---------+----------+---------+---------+-----------+-----------------+------------------+---------------------------------+
+| ACC-001 | AED      |  390.93 |    0.00 |    390.93 |          390.93 | none             | Auth-A=SETTLED; Auth-B=DECLINED |
+| ACC-002 | BHD      |  10.008 |   0.000 |    10.008 |          10.008 | none             | none                            |
++---------+----------+---------+---------+-----------+-----------------+------------------+---------------------------------+
   Errors: none
   Diagnostics: none
 ```
 
-### How to read the report
+### How to read the output & Notes
 
-Each day has one table with a row per account. Balance columns align to the right, and column widths fit the full contents. Errors and diagnostics appear below the table.
+1. **Each day has one table with a row per account.** 
+2. Balance columns align to the right, and column widths fit the full contents. 
+3. Errors and diagnostics appear below the table.
 
 | Field | Meaning |
 | --- | --- |
 | `Currency` | Currency of every amount in the row, including fees. AED keeps 2 decimal places; BHD keeps 3. |
 | `Closing` | Ledger balance as known at that day's saved close, including fees. Day 6 also includes capitalized interest. |
+| `On hold` | Total reserved by active authorizations at that same original close: `Closing − Available`. Settled and declined authorizations reserve nothing. |
 | `Available` | Ledger minus active holds at that same original close. |
 | `Revised closing` | Balance for the same value day using all knowledge at the final saved close. Later entries outside that saved window cannot change it. |
 | `Fees (value day)` | New assessments recorded since the previous close. Charges are positive amounts; `(Day N)` states the value day when each debit affects the ledger. |
-| `Authorizations` | States known at the original close. They are never reevaluated using revised balances. |
+| `Authorizations` | A Clearing card transactions. If accepted, it holds a deposit for a settlement. |
 | `Errors` / `Diagnostics` | Rejected attempts and accepted anomalies received that day, respectively. `none` is explicit; repeated failed attempts remain separate. |
 | `sequence` | The saved journal prefix used for the historical view. The report also copies the rejection prefix because failures do not advance journal sequences. |
 
-Day 2 originally closed at AED 250.00 with AED 50.00 available under Auth-A's
-hold. Its revised closing balance is AED 225.00 after the backdated debit,
-reversal and retained Day 2 fee. The fee appears in Day 5's report because
-that is when it was assessed. E10 similarly revises BHD's Day 5 balance to
-10.000 without changing its original zero close.
+#### Notes
 
-Auth-A has settled and released its hold. Auth-B was declined when it was
-requested; E9 does not change that decision. E6 is rejected because Auth-Z has
-no preceding authorization. Its AED 180.00 never leaves the account.
+About the **retroactive** fees: 
 
-The three overdraft fees total **AED 75.00**. Capitalized interest is
-**AED 0.93** and **BHD 0.008**. These values are calculated by the core and
-verified by the tests.
+* Day 2 originally closed at AED 250.00 with AED 50.00 available under Auth-A's hold. 
+* Its revised closing balance is AED 225.00 after the backdated debit, reversal and retained Day 2 fee. 
+* The fee appears in Day 5's report because that is when it was assessed. 
+* E10 similarly revises BHD's Day 5 balance to 10.000 without changing its original zero close.
+
+About **Card Authorizations & Settlements**: 
+
+* Auth-A has settled and released its hold. 
+* Auth-B was declined when it was requested.
+* E6 is rejected because Auth-Z has no preceding authorization.
+
+About **Overdraft**: 
+
+* All three overdraft fees fall on ACC-001 and total **AED 75.00**; ACC-002 never
+goes negative, so it is charged none.
+
+About **Capitalized interest**: 
+
+* Capitalized interest is **AED 0.93** for ACC-001 and **BHD 0.008** for ACC-002. 
 
 ---
 
 ## The six-day scenario
 
-Let's analyze the event stream.
-First of all, both accounts open at zero: `ACC-001` in AED and `ACC-002` in BHD.
+Let's analize the **event stream**: first of all, both accounts open at zero: `ACC-001` in AED and `ACC-002` in BHD.
 [Scenario.java](src/main/java/accountledger/scenario/Scenario.java) defines the stream used by both the executable and the complete-stream test.
 
 | Processing day | Events, in arrival order |
@@ -353,10 +348,9 @@ Replay accepts already constructed, typed requests. Construction failures happen
 before this API receives the input. It catches `RequestRejectedException` only;
 other exceptions propagate.
 
-| Document | Contents |
+| Document | Contents | 
 | --- | --- |
 | [AMBIGUITIES.md](AMBIGUITIES.md) | Unspecified behavior and the decisions applied. |
 | [NUMBERS.md](NUMBERS.md) | Constants, fixture values and their rationale. |
-| [PRODUCTION.md](PRODUCTION.md) | Scaling limits, value-dating risk, authorization endings and deferred scope. |
 | [REJECTED.md](REJECTED.md) | Refused criteria, policy alternatives and approaches replaced during development. |
 | [WORKLOG.md](WORKLOG.md) | Timestamped implementation and verification history. |

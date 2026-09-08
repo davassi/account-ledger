@@ -170,13 +170,14 @@ for daily interest.
 | Number | Where it comes from |
 | --- | --- |
 | 6 snapshots, 12 account rows | One saved boundary per day, one row per account per boundary. |
-| 7 table columns; balance columns at indexes 2–4 | Account, currency, closing, available, revised closing, fees and authorizations. Only the three balance columns align right. These positions follow the schema; halving them would select different fields or omit information. |
+| 8 table columns; balances and held amounts at indexes 2–5 | Account, currency, closing, on hold, available, revised closing, fees and authorizations. The four numeric columns align right. These positions follow the schema; halving them would select different fields or omit information. |
 | Column width = longest header or cell; 2 padding spaces | One space on each side keeps values separate from borders. Half the computed width would not fit the contents; one padding space would leave one side without a gap. |
 | 6 table lines per scenario day | One header, two account rows and three borders. The report tests check that they have equal lengths even when fees or authorization states widen a column. Half would omit rows or borders. |
 | Cutoffs 4, 7, 10, 13, 18 and 26 | Derived from the accepted order and the end-of-day work. The final 26 is 9 accepted events + 12 closes + 3 reassessments + 2 capitalizations. E6 moves only the rejection log. Observed, not written into the report. |
 | Day 0 and cutoff 0; the previous index | The empty view before the first saved day, and the snapshot immediately before each one. Together they locate what is new: fees, diagnostics and rejections. |
 | Original AED closes 250.00, 250.00, 650.00, 465.00, -230.00, 390.93 | The six real end-of-day balances. Day 5 carries the backdated 620 debit and all 75 in fees; Day 6 carries the reversal and the 0.93 interest credit. |
 | Original AED availability 250.00, 50.00, 450.00, 465.00, -230.00, 390.93 | Auth-A's 200 hold subtracted on Days 2 and 3 only. Settlement releases it, and the declined Auth-B reserves nothing. These prove later states do not leak backwards. |
+| On hold: AED 200.00 on Days 2 and 3; zero otherwise and throughout for BHD | Closing minus available at the same saved cutoff. Auth-A reserves its full amount until settlement; Auth-B's decline reserves nothing. Halving the displayed hold would misstate the reservation. |
 | Revised AED closes 250.00, 225.00, 625.00, 415.00, 390.00, 390.93 | The same value days seen with final knowledge. Only Day 6 includes the interest credit. |
 | Original BHD Day 5 0.000 against revised 10.000; Day 6 10.008 | E10 belongs to value Day 5 but arrives during Day 6 — the prescribed late-arrival case. The last figure includes 0.008 of interest. |
 | 11 of 12 account rows show no new fees | Only ACC-001 on Day 5 has assessments, showing three charges at value days 2, 4 and 5. The count catches a fee being displayed again on later days. |

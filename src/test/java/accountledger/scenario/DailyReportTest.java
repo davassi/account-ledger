@@ -30,26 +30,26 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class DailyReportTest {
     @ParameterizedTest
     @CsvSource({
-            // Day, AED closing, available, revised; BHD closing, revised.
-            "1, 250.00, 250.00, 250.00, 0.000, 0.000",
-            "2, 250.00, 50.00, 225.00, 0.000, 0.000",
-            "3, 650.00, 450.00, 625.00, 0.000, 0.000",
-            "4, 465.00, 465.00, 415.00, 0.000, 0.000",
-            "5, -230.00, -230.00, 390.00, 0.000, 10.000",
-            "6, 390.93, 390.93, 390.93, 10.008, 10.008"
+            // Day, AED closing, on hold, available, revised; BHD closing, revised.
+            "1, 250.00, 0.00, 250.00, 250.00, 0.000, 0.000",
+            "2, 250.00, 200.00, 50.00, 225.00, 0.000, 0.000",
+            "3, 650.00, 200.00, 450.00, 625.00, 0.000, 0.000",
+            "4, 465.00, 0.00, 465.00, 415.00, 0.000, 0.000",
+            "5, -230.00, 0.00, -230.00, 390.00, 0.000, 10.000",
+            "6, 390.93, 0.00, 390.93, 390.93, 10.008, 10.008"
     })
     void printsOriginalBalancesAndAvailabilityAlongsideFinalRevisions(int day, String aedClosing,
-            String aedAvailable, String aedRevised, String bhdClosing, String bhdRevised) {
+            String aedOnHold, String aedAvailable, String aedRevised, String bhdClosing, String bhdRevised) {
         var scenario = new Scenario();
         scenario.run();
         var output = day(render(scenario::printReport), day);
 
-        assertEquals(List.of("Account", "Currency", "Closing", "Available", "Revised closing",
+        assertEquals(List.of("Account", "Currency", "Closing", "On hold", "Available", "Revised closing",
                 "Fees (value day)", "Authorizations"), row(output, "Account"));
-        assertEquals(List.of("ACC-001", "AED", aedClosing, aedAvailable, aedRevised),
-                row(output, "ACC-001").subList(0, 5));
-        assertEquals(List.of("ACC-002", "BHD", bhdClosing, bhdClosing, bhdRevised),
-                row(output, "ACC-002").subList(0, 5));
+        assertEquals(List.of("ACC-001", "AED", aedClosing, aedOnHold, aedAvailable, aedRevised),
+                row(output, "ACC-001").subList(0, 6));
+        assertEquals(List.of("ACC-002", "BHD", bhdClosing, "0.000", bhdClosing, bhdRevised),
+                row(output, "ACC-002").subList(0, 6));
         var table = output.lines().filter(line -> line.startsWith("|") || line.startsWith("+")).toList();
         assertEquals(6, table.size());
         table.forEach(line -> assertEquals(table.getFirst().length(), line.length(), output));
@@ -69,10 +69,10 @@ class DailyReportTest {
         assertEquals("Auth-A=SETTLED", row(day(output, 4), "ACC-001").getLast());
         List.of(5, 6).forEach(day -> assertEquals("Auth-A=SETTLED; Auth-B=DECLINED",
                 row(day(output, day), "ACC-001").getLast()));
-        assertEquals("25.00 (Day 2); 25.00 (Day 4); 25.00 (Day 5)", row(day(output, 5), "ACC-001").get(5));
+        assertEquals("25.00 (Day 2); 25.00 (Day 4); 25.00 (Day 5)", row(day(output, 5), "ACC-001").get(6));
         assertEquals(11, IntStream.rangeClosed(1, 6).boxed()
                 .flatMap(day -> Stream.of("ACC-001", "ACC-002").map(account -> row(day(output, day), account)))
-                .filter(row -> row.get(5).equals("none")).count());
+                .filter(row -> row.get(6).equals("none")).count());
         assertTrue(day(output, 4).contains("Errors: E6: Unknown authorization: Auth-Z"));
         assertEquals(1, output.lines().filter(line -> line.contains("E6:")).count());
         assertEquals(entries, scenario.journal().entries());
@@ -105,7 +105,8 @@ class DailyReportTest {
         assertFalse(replay.process(3, missing));
 
         assertEquals(saved, render(report::print));
-        assertEquals(List.of("A", "AED", "250.00", "50.00", "650.00"), row(day(saved, 1), "A").subList(0, 5));
+        assertEquals(List.of("A", "AED", "250.00", "200.00", "50.00", "650.00"),
+                row(day(saved, 1), "A").subList(0, 6));
         assertEquals("AUTH=APPROVED", row(day(saved, 1), "A").getLast());
         assertTrue(day(saved, 1).contains("Errors: none"));
         assertEquals("AUTH=SETTLED", row(day(saved, 2), "A").getLast());

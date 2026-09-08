@@ -166,6 +166,7 @@ refused on interpretation rather than on arithmetic.
 | Errors and repeated attempts | Take the difference between consecutive saved rejection lists, keeping repeats. Booked day plays no part in deciding which report day an attempt belongs to. |
 | Accepted diagnostics | Show those from entries added since the previous cutoff, kept separate from rejections, in arrival order even for backdated requests. |
 | Hold states | Show them as they stood at each original close. Auth-A is approved on Days 2 and 3, then settled; Auth-B stays declined after E9. Decisions are never re-evaluated against revised balances. |
+| On hold | Display closing minus available, both read at the original saved close. This reuses the core's hold calculation and preserves currency precision, including zero when no authorization is active. |
 | Table layout | One ASCII table per day, one row per account. Currency applies to every amount in the row, including fees. Columns fit the full contents and balance columns align right. Errors and diagnostics appear below the table. |
 | Where output goes | To a stream supplied by the caller, so the command uses standard output and tests can capture it without touching global state. Printing never writes to the journal, and an empty report prints nothing. |
 
