@@ -6,10 +6,10 @@ import java.util.List;
 import java.util.Objects;
 
 /** Original event input. Record equality defines whether a submission is a retry. */
-public record Request(String eventId, int bookedDay, Data data) {
+public record Command(String eventId, int bookedDay, Data data) {
 
-    /** Constructs a Request instance with the specified event ID, booked day, and data. */
-    public Request {
+    /** Constructs a Command instance with the specified event ID, booked day, and data. */
+    public Command {
         Objects.requireNonNull(eventId, "eventId");
         Objects.requireNonNull(data, "data");
         if (eventId.isBlank()) {
@@ -33,13 +33,13 @@ public record Request(String eventId, int bookedDay, Data data) {
     /** Hold input; the authorization operation validates it before recording an outcome. */
     public record Hold(String accountId, String authorizationId, Money amount) implements Data {}
 
-    /** The monetary value day is independent of the request's booked day. */
+    /** The monetary value day is independent of the command's booked day. */
     public record Settlement(String accountId, String authorizationId, Money amount, int valueDay) implements Data {}
 
-    /** Amounts and currency come from the original event, not from the reversal request. */
+    /** Amounts and currency come from the original event, not from the reversal command. */
     public record Reversal(String accountId, String originalEventId, int valueDay) implements Data {}
 
-    /** Closes the request's booked day, including fees and updated interest accruals. */
+    /** Closes the command's booked day, including fees and updated interest accruals. */
     public record DayClose(String accountId) implements Data {}
 
     /** Rechecks already closed days using the knowledge available when recorded. */

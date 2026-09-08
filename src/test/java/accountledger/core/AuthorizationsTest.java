@@ -172,11 +172,11 @@ class AuthorizationsTest {
     @CsvSource({"UNKNOWN, AED", "ACC-001, BHD"})
     void anInvalidDecisionRejectsTheWholeJournalEntry(String accountId, CurrencyUnit currency) {
         var invalid = new Authorization(accountId, "A", Money.of(currency, "200.00"), APPROVED);
-        var request = new Request("MIXED", 2, new Request.Hold(accountId, "A", invalid.amount()));
+        var command = new Command("MIXED", 2, new Command.Hold(accountId, "A", invalid.amount()));
         var before = journal.entries();
 
         assertThrows(IllegalArgumentException.class,
-                () -> journal.append(request, () -> new Journal.Effects(List.of(aed(2, "400.00")), List.of(invalid))));
+                () -> journal.append(command, () -> new Journal.Effects(List.of(aed(2, "400.00")), List.of(invalid))));
         assertEquals(before, journal.entries());
     }
 
@@ -184,8 +184,8 @@ class AuthorizationsTest {
     void decisionCollectionsCannotBeUsedToRewriteHistory() {
         var authA = new Authorization("ACC-001", "A", Money.of(AED, "200.00"), APPROVED);
         var input = new ArrayList<>(List.of(authA));
-        var request = new Request("H1", 2, new Request.Hold("ACC-001", "A", authA.amount()));
-        var entry = journal.append(request, () -> new Journal.Effects(List.of(), input));
+        var command = new Command("H1", 2, new Command.Hold("ACC-001", "A", authA.amount()));
+        var entry = journal.append(command, () -> new Journal.Effects(List.of(), input));
         var snapshot = authorizations.decisions(entry.sequence());
         input.clear();
 

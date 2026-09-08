@@ -5,12 +5,10 @@
 ![Runtime dependencies: none](https://img.shields.io/badge/runtime%20dependencies-none-informational?style=flat-square)
 
 MAL is an in-Memory Account Ledger in **Java 21**, built around an append-only journal.
-It replays six days of credits, debits, card authorizations, settlements and
-backdated corrections across AED and BHD accounts. Earlier views remain
-queryable after later events change the balances.
+It processes six days of credits, debits, card authorizations, settlements and backdated corrections across AED and BHD accounts. 
+Earlier views remain queryable after later events change the balances.
 
-The application runs locally with no web layer, database, persistence or runtime
-libraries beyond the JDK. Each execution starts with fresh state.
+The application runs locally with no web layer, database, persistence or runtime libraries beyond the JDK. Each execution starts with fresh state.
 
 ## How to run the suite
 
@@ -103,7 +101,7 @@ Day 6 (sequence 26)
 | `Available` | Ledger minus active holds at that same original close. |
 | `Revised closing` | Balance for the same value day using all knowledge at the final saved close. Later entries outside that saved window cannot change it. |
 | `Fees (value day)` | New assessments recorded since the previous close. Charges are positive amounts; `(Day N)` states the value day when each debit affects the ledger. |
-| `Authorizations` | A Clearing card transactions. If accepted, it holds a deposit for a settlement. |
+| `Authorizations` | Card authorization states as known at that day's saved close. An approved authorization reserves funds until it settles; recorded states are never re-evaluated against revised balances. |
 | `Errors` / `Diagnostics` | Rejected attempts and accepted anomalies received that day, respectively. `none` is explicit; repeated failed attempts remain separate. |
 | `sequence` | The saved journal prefix used for the historical view. The report also copies the rejection prefix because failures do not advance journal sequences. |
 
@@ -119,7 +117,7 @@ About the **retroactive** fees:
 About **Card Authorizations & Settlements**: 
 
 * Auth-A has settled and released its hold. 
-* Auth-B was declined when it was requested.
+* Auth-B was declined when it was requested. A decline is final, so a later capture against it would be recorded with a diagnostic but would move no money.
 * E6 is rejected because Auth-Z has no preceding authorization.
 
 About **Overdraft**: 
@@ -141,27 +139,55 @@ Let's analize the **event stream**: first of all, both accounts open at zero: `A
 | Processing day | Events, in arrival order |
 | --- | --- |
 | 1 | E1 credits AED 1,200.00; E2 debits AED 950.00. Both have value Day 1. |
-| 2 | E3 requests Auth-A's AED 200.00 hold. |
+| 2 | E3 commands Auth-A's AED 200.00 hold. |
 | 3 | E4 credits AED 400.00, value Day 3. |
-| 4 | E5 settles Auth-A for AED 185.00; E6 attempts to settle unknown Auth-Z for AED 180.00 and is rejected. Both requests specify value Day 4. |
-| 5 | E7 debits AED 620.00, value Day 2; E8 requests Auth-B's AED 90.00 hold. |
+| 4 | E5 settles Auth-A for AED 185.00; E6 attempts to settle unknown Auth-Z for AED 180.00 and is rejected. Both commands specify value Day 4. |
+| 5 | E7 debits AED 620.00, value Day 2; E8 commands Auth-B's AED 90.00 hold. |
 | 6 | E9 reverses E7, value Day 2; E10 credits ACC-002 with BHD 10.000 in three installments, booked and valued on Day 5. |
 
-E1–E9 belong to ACC-001. **E10 arrives after E9**, even though its booked day
-is earlier. The driver preserves that order. Its installments are BHD 3.334,
-3.333 and 3.333, which sum to exactly 10.000.
+Notes:
 
-Both accounts close after each row. Backdated changes trigger explicit
+* E1–E9 belong to ACC-001. 
+* **E10 arrives after E9**, even though its booked day is earlier. The driver preserves that order. 
+Its installments are BHD 3.334, 3.333 and 3.333, which sum to exactly 10.000.
+* Both accounts close after each row. Backdated changes trigger explicit
 reassessments after E7, E9 and E10. Capitalization follows both Day 6 closes.
+
+### The resulting journal
+
+```text
+seq  event             bkd  effect
+  1  E1                  1  ACC-001 1200.00 @D1
+  2  E2                  1  ACC-001 -950.00 @D1
+  3  CLOSE-ACC-001-1     1  accruals 1d = 0.10
+  4  CLOSE-ACC-002-1     1  accruals 1d = 0.000
+  5  E3                  2  Auth-A=APPROVED
+  6  CLOSE-ACC-001-2     2  accruals 2d = 0.20
+  7  CLOSE-ACC-002-2     2  accruals 2d = 0.000
+  8  E4                  3  ACC-001 400.00 @D3
+  9  CLOSE-ACC-001-3     3  accruals 3d = 0.46
+ 10  CLOSE-ACC-002-3     3  accruals 3d = 0.000
+ 11  E5                  4  ACC-001 -185.00 @D4  Auth-A=SETTLED
+ 12  CLOSE-ACC-001-4     4  accruals 4d = 0.65
+ 13  CLOSE-ACC-002-4     4  accruals 4d = 0.000
+ 14  E7                  5  ACC-001 -620.00 @D2
+ 15  E7-FEES             5  ACC-001 -25.00 @D2  ACC-001 -25.00 @D4  accruals 4d = 0.10
+ 16  E8                  5  Auth-B=DECLINED
+ 17  CLOSE-ACC-001-5     5  ACC-001 -25.00 @D5  accruals 5d = 0.10
+ 18  CLOSE-ACC-002-5     5  accruals 5d = 0.000
+ 19  E9                  6  ACC-001 620.00 @D2
+ 20  E9-FEES             6  accruals 5d = 0.77
+ 21  E10                 5  ACC-002 3.334 @D5  ACC-002 3.333 @D5  ACC-002 3.333 @D5
+ 22  E10-FEES            6  accruals 5d = 0.004
+ 23  CLOSE-ACC-001-6     6  accruals 6d = 0.93
+ 24  CLOSE-ACC-002-6     6  accruals 6d = 0.008
+ 25  INTEREST-ACC-001    6  ACC-001 0.93 @D6
+ 26  INTEREST-ACC-002    6  ACC-002 0.008 @D6
+```
 
 ### How the final amounts are obtained
 
-E7 makes Day 2's balance **AED -370.00 before fees**. Reassessment charges
-Day 2 and Day 4; the Day 5 close adds the third fee. After the Day 2 fee,
-Day 3 is still positive at AED 5.00, so it incurs no fee.
-
-E9 reverses the debit and retains the separately assessed fees. The resulting
-balances and revised daily accruals are:
+The resulting balances and revised daily accruals are:
 
 | Day | AED ledger before capitalization | AED interest | BHD ledger before capitalization | BHD interest |
 | --- | ---: | ---: | ---: | ---: |
@@ -173,11 +199,6 @@ balances and revised daily accruals are:
 | 6 | 390.00 | 0.16 | 10.000 | 0.004 |
 | **Interest total** | | **0.93** | | **0.008** |
 
-This table uses the accepted effects of the ten input attempts and the fee
-assessments, before the final interest credits. It is a revised view:
-the original Day 2 AED close was 250.00,
-and the original Day 5 BHD close was 0.000. Both remain queryable using their
-saved journal sequences.
 
 ---
 
@@ -186,72 +207,13 @@ saved journal sequences.
 | Area | Behavior |
 | --- | --- |
 | Money | `BigDecimal` amounts use AED's 2 decimals or BHD's 3. Inputs requiring rounding are rejected; calculations round explicitly. No currency conversion. |
-| Journal | Each accepted request and its immutable effects share one sequence. Validation finishes before anything is appended. Existing records are never changed or deleted. |
+| Journal | Each accepted command and its immutable effects share one sequence. Validation finishes before anything is appended. Existing records are never changed or deleted. |
 | Authorizations | Available balance is ledger balance minus active holds. Approve only when applying the new hold leaves availability at or above zero. Holds do not change the ledger balance. |
-| Settlements | Reject a reference absent from that account's authorization history without a debit. Otherwise allow one final capture and release the entire approved hold. A declined but recorded reference produces a debit and a diagnostic. |
+| Settlements | A settlement requires an approved authorization. A reference absent from that account's history is rejected without a debit; a recorded but declined reference is written to the journal with a diagnostic and moves no money. Only an approved reference is captured, once, releasing the entire hold. |
 | Reversals | Append the opposite of every posting in the referenced event. Preserve authorization decisions and separately assessed fees. Explicit fee refunds require their own compensation. |
 | Overdraft fees | Charge AED 25.00 at most once per account and value day when the closing ledger balance is negative. Reassess closed days chronologically, including the effect of earlier fees. |
 | Interest | Accrue 0.04% daily on positive ledger balances after fees, using `HALF_EVEN` at the account's precision. Accruals stay unspendable until capitalization. |
 | Capitalization | Credit the exact sum of the six rounded daily accruals once, at the end of Day 6. Day 6 earns interest before that credit; no remainder is discarded. |
-
-E9 reverses E7's AED 620.00 principal only; it does not automatically refund
-AED 75.00 assessed in separate entries. Explicit refunds would be compatible
-with append-only, but are not implied by the adopted reversal scope.
-[REJECTED.md](REJECTED.md) explains the refusal of automatic restoration in
-criterion 6. [AMBIGUITIES.md](AMBIGUITIES.md) records the decisions applied.
-
----
-
-## Dates, history and retries
-
-The ledger keeps these concepts separate:
-
-| Term | Meaning |
-| --- | --- |
-| Processing day | When the driver handles a request; stored with rejected attempts. |
-| Booked day | The day declared by the request. It can move backwards as events arrive. |
-| Value day | When a posting affects the ledger balance. |
-| Sequence | The accepted entry's position in the journal, always increasing. |
-
-`balance(accountId, valueDay, knownThroughSequence)` includes postings up to
-both bounds, inclusively. `available` requires the same two bounds; holds apply
-according to the decisions known at that sequence. Save the closing sequence
-to reproduce an original close.
-
-This independent Java example records E1, E2 and a later correction, without
-running daily closes or assessing fees. The statements can be entered in
-`jshell --class-path target/classes` after compilation:
-
-```java
-import accountledger.core.*;
-import accountledger.domain.Money;
-import java.util.List;
-import static accountledger.domain.CurrencyUnit.AED;
-
-var journal = new Journal(new Account("ACC-001", Money.of(AED, "0.00")));
-journal.append("E1", 1, List.of(new Posting("ACC-001", 1, Money.of(AED, "1200.00"))));
-journal.append("E2", 1, List.of(new Posting("ACC-001", 1, Money.of(AED, "-950.00"))));
-long original = journal.lastSequence();
-
-var late = journal.append("E7", 5,
-        List.of(new Posting("ACC-001", 2, Money.of(AED, "-620.00"))));
-journal.balance("ACC-001", 2, original);        // AED 250.00
-journal.balance("ACC-001", 2, late.sequence()); // AED -370.00
-```
-
-`Journal` owns retry detection. An identical request returns its original
-outcome without recalculation; reusing its ID with different input is rejected.
-Earlier approvals, declines and historical snapshots survive later corrections.
-
-`Replay.process(processingDay, request)` returns `false` after recording an
-expected rejection, leaving balances and holds unchanged. Each failed attempt
-remains in an append-only log and does not reserve its event ID. It may succeed
-later if corrected or if a missing prerequisite arrives. Declines and accepted
-diagnostics return `true`.
-
-`DailyReport.capture` saves a copy of `replay.rejections()` alongside the
-journal cutoff after each day. Both prefixes remain fixed when later events
-arrive; rejected attempts do not advance journal sequences.
 
 ---
 
@@ -262,22 +224,20 @@ All application code is under [`src/main/java/accountledger`](src/main/java/acco
 | Package | Responsibility |
 | --- | --- |
 | [`accountledger.domain`](src/main/java/accountledger/domain) | `Money` and `CurrencyUnit`: currency precision and monetary arithmetic. |
-| [`accountledger.core`](src/main/java/accountledger/core) | Journal, requests, accounting operations and their records, including request replay. |
+| [`accountledger.core`](src/main/java/accountledger/core) | Journal, commands, accounting operations and their records, including command replay. |
 | [`accountledger.scenario`](src/main/java/accountledger/scenario) | The executable six-day scenario and its daily report. |
 
 `domain` is independent, `core` uses `domain`, and `scenario` uses both.
-Journal and accounting operations share a package to keep their collaboration
-methods package-private. Tests follow the same package structure.
 
 ```mermaid
 flowchart TD
-    Scenario --> Replay
+    Scenario --> CommandProcessor
     Scenario --> DailyReport
     DailyReport -->|reads| Journal
-    Replay --> Authorizations
-    Replay --> Settlements
-    Replay --> Reversals
-    Replay --> DailyClosing
+    CommandProcessor --> Authorizations
+    CommandProcessor --> Settlements
+    CommandProcessor --> Reversals
+    CommandProcessor --> DailyClosing
     DailyClosing --> Interest
     Authorizations --> Journal
     Settlements --> Journal
@@ -291,7 +251,7 @@ flowchart TD
 | --- | --- |
 | [Scenario](src/main/java/accountledger/scenario/Scenario.java) | Executable stream, daily boundaries and final capitalization. |
 | [DailyReport](src/main/java/accountledger/scenario/DailyReport.java) | Saved closes, original and revised balances, daily fees, states and errors. |
-| [Replay](src/main/java/accountledger/core/Replay.java) | Dispatch requests and record expected rejections. |
+| [CommandProcessor](src/main/java/accountledger/core/CommandProcessor.java) | Dispatch commands and record expected rejections. |
 | [Journal](src/main/java/accountledger/core/Journal.java) | Atomic append, shared retry detection and historical queries. |
 | [Money](src/main/java/accountledger/domain/Money.java) | Currency precision, exact arithmetic, rounding and installment splitting. |
 | [Authorizations](src/main/java/accountledger/core/Authorizations.java) | Availability, approval decisions and active hold state. |
@@ -300,24 +260,14 @@ flowchart TD
 | [DailyClosing](src/main/java/accountledger/core/DailyClosing.java) | Daily close markers, fee assessment and updated accruals. |
 | [Interest](src/main/java/accountledger/core/Interest.java) | Rounded daily accruals and final capitalization. |
 
-A `Request` is the original input. A `Posting` is a signed monetary movement.
-A `Journal.Entry` groups the request with its effects: postings, authorization
-states, diagnostics and accruals. One entry can contain several postings, as E10 does.
-
 ---
 
 ## Tests and the deliberate counterexample
 
-The ordinary suite covers decimal precision, atomic writes, retries, historical
-views, holds, settlements, reversals, fees, interest and rejected attempts.
-[DailyClosingTest](src/test/java/accountledger/core/DailyClosingTest.java) checks close
-and fee assessment rules;
-[ScenarioTest](src/test/java/accountledger/scenario/ScenarioTest.java) checks the complete
-scenario's financial results, arrival order and closing boundaries.
-[DailyReportTest](src/test/java/accountledger/scenario/DailyReportTest.java)
-checks all six daily outputs, historical availability, late BHD credit,
-capitalization, fee dates, errors and immutable report boundaries. The ordinary
-suite contains **187 tests**. Maven stores reports in `target/surefire-reports/`.
+The ordinary suite covers decimal precision, atomic writes, retries, historical views, holds, settlements, reversals, fees, interest and rejected attempts.
+* [DailyClosingTest](src/test/java/accountledger/core/DailyClosingTest.java) checks close and fee assessment rules;
+* [ScenarioTest](src/test/java/accountledger/scenario/ScenarioTest.java) checks the complete scenario's financial results, arrival order and closing boundaries.
+* [DailyReportTest](src/test/java/accountledger/scenario/DailyReportTest.java) checks all six daily outputs, historical availability, late BHD credit, capitalization, fee dates, errors and immutable report boundaries. 
 
 One required test deliberately challenges the chosen fee-retention policy.
 Run it separately:
@@ -344,8 +294,8 @@ A negative BHD close is rejected because no BHD overdraft fee was specified.
 Capitalization freezes accruals; reopening finalized interest requires a future
 explicit policy.
 
-Replay accepts already constructed, typed requests. Construction failures happen
-before this API receives the input. It catches `RequestRejectedException` only;
+CommandProcessor accepts already constructed, typed commands. Construction failures happen
+before this API receives the input. It catches `CommandRejectedException` only;
 other exceptions propagate.
 
 | Document | Contents | 

@@ -28,7 +28,7 @@ public final class DailyReport {
 
     /**
      * Save once per day, in order, after all end-of-day operations including capitalization.
-     * Supply the cumulative rejection snapshot from the same replay each time.
+     * Supply the cumulative rejection snapshot from the same command processor each time.
      */
     public void capture(int day, List<Rejection> rejections) {
         days.add(new Snapshot(day, journal.lastSequence(), List.copyOf(rejections)));
@@ -40,8 +40,6 @@ public final class DailyReport {
             return;
         }
         var last = days.getLast();
-        out.println("Closing, on hold and available use each day's saved close.");
-        out.printf("Revised closing uses the final saved close: Day %d (sequence %d).%n", last.day(), last.cutoff());
         IntStream.range(0, days.size()).forEach(index -> {
             var previous = index == 0 ? new Snapshot(0, 0, List.of()) : days.get(index - 1);
             printDay(out, days.get(index), previous, last.cutoff());
@@ -69,7 +67,7 @@ public final class DailyReport {
         printAccounts(out, rows);
         out.println("  Errors: " + summarize(current.rejections().stream()
                 .skip(previous.rejections().size())
-                .map(rejection -> rejection.request().eventId() + ": " + rejection.reason())));
+                .map(rejection -> rejection.command().eventId() + ": " + rejection.reason())));
         out.println("  Diagnostics: " + summarize(journal.entries(current.cutoff()).stream()
                 .filter(entry -> entry.sequence() > previous.cutoff())
                 .flatMap(entry -> entry.diagnostics().stream().map(code -> entry.eventId() + ": " + code))));

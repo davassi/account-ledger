@@ -5,8 +5,8 @@ import accountledger.core.Authorizations;
 import accountledger.core.DailyClosing;
 import accountledger.core.Journal;
 import accountledger.core.Posting;
-import accountledger.core.Replay;
-import accountledger.core.Request;
+import accountledger.core.CommandProcessor;
+import accountledger.core.Command;
 import accountledger.core.Settlements;
 import accountledger.domain.Money;
 
@@ -81,28 +81,28 @@ class DailyReportTest {
     @Test
     void savedPrefixesSurviveLaterPostingsDecisionsAndRejectedAttempts() {
         var journal = new Journal(new Account("A", Money.of(AED, "250.00")));
-        var replay = new Replay(journal);
+        var processor = new CommandProcessor(journal);
         var report = new DailyReport(journal, List.of("A"));
         var closing = new DailyClosing(journal);
         new Authorizations(journal).authorize("HOLD", 1, "A", "AUTH", Money.of(AED, "200.00"));
         closing.close("C1", 1, "A");
-        report.capture(1, replay.rejections());
+        report.capture(1, processor.rejections());
 
         journal.append("LATE", 2, List.of(new Posting("A", 1, Money.of(AED, "400.00"))));
         new Settlements(journal).settle("SETTLE", 2, "A", "AUTH", Money.of(AED, "185.00"), 2);
-        var missing = new Request("MISSING", 1,
-                new Request.Settlement("A", "UNKNOWN", Money.of(AED, "180.00"), 1));
-        assertFalse(replay.process(2, missing));
-        assertFalse(replay.process(2, missing));
+        var missing = new Command("MISSING", 1,
+                new Command.Settlement("A", "UNKNOWN", Money.of(AED, "180.00"), 1));
+        assertFalse(processor.process(2, missing));
+        assertFalse(processor.process(2, missing));
         closing.close("C2", 2, "A");
-        var rejections = new ArrayList<>(replay.rejections());
+        var rejections = new ArrayList<>(processor.rejections());
         report.capture(2, rejections);
         var saved = render(report::print);
 
         rejections.clear();
         journal.append("LATER", 3, List.of(new Posting("A", 1, Money.of(AED, "400.00"))));
         new Authorizations(journal).authorize("NEW-HOLD", 3, "A", "NEW", Money.of(AED, "200.00"));
-        assertFalse(replay.process(3, missing));
+        assertFalse(processor.process(3, missing));
 
         assertEquals(saved, render(report::print));
         assertEquals(List.of("A", "AED", "250.00", "200.00", "50.00", "650.00"),
@@ -117,16 +117,16 @@ class DailyReportTest {
     @Test
     void acceptedDiagnosticsFollowArrivalOrderEvenWhenTheBookedDayIsEarlier() {
         var journal = new Journal(new Account("A", Money.of(AED, "250.00")));
-        var replay = new Replay(journal);
+        var processor = new CommandProcessor(journal);
         var report = new DailyReport(journal, List.of("A"));
         var closing = new DailyClosing(journal);
         new Authorizations(journal).authorize("HOLD", 1, "A", "AUTH", Money.of(AED, "300.00"));
         closing.close("C1", 1, "A");
-        report.capture(1, replay.rejections());
-        assertTrue(replay.process(2, new Request("SETTLE", 1,
-                new Request.Settlement("A", "AUTH", Money.of(AED, "50.00"), 2))));
+        report.capture(1, processor.rejections());
+        assertTrue(processor.process(2, new Command("SETTLE", 1,
+                new Command.Settlement("A", "AUTH", Money.of(AED, "50.00"), 2))));
         closing.close("C2", 2, "A");
-        report.capture(2, replay.rejections());
+        report.capture(2, processor.rejections());
         var output = render(report::print);
 
         assertTrue(day(output, 1).contains("Diagnostics: none"));

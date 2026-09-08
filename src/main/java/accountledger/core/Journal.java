@@ -38,29 +38,29 @@ public final class Journal {
      * Booking days may move backwards; sequences always follow arrival order.
      */
     public Entry append(String eventId, int bookedDay, List<Posting> postings) {
-        var data = new Request.Postings(postings);
-        return append(new Request(eventId, bookedDay, data),
+        var data = new Command.Postings(postings);
+        return append(new Command(eventId, bookedDay, data),
                 () -> new Effects(data.postings(), List.of()));
     }
 
     /**
-     * Returns a recorded outcome for an identical request, or rejects a conflicting
-     * ID. Only a new request evaluates the supplier, which must compute effects
+     * Returns a recorded outcome for an identical command, or rejects a conflicting
+     * ID. Only a new command evaluates the supplier, which must compute effects
      * without modifying this journal. Failed computation or validation appends nothing.
      */
-    Entry append(Request request, Supplier<Effects> decide) {
-        Objects.requireNonNull(request, "request");
+    Entry append(Command command, Supplier<Effects> decide) {
+        Objects.requireNonNull(command, "command");
         Objects.requireNonNull(decide, "decide");
-        var duplicate = find(request.eventId(), lastSequence());
+        var duplicate = find(command.eventId(), lastSequence());
         if (duplicate.isPresent()) {
             var existing = duplicate.get();
-            if (!existing.request().equals(request)) {
-                throw new RequestRejectedException("Conflicting event ID: " + request.eventId());
+            if (!existing.command().equals(command)) {
+                throw new CommandRejectedException("Conflicting event ID: " + command.eventId());
             }
             return existing;
         }
 
-        var entry = new Entry(lastSequence() + 1, request, decide.get());
+        var entry = new Entry(lastSequence() + 1, command, decide.get());
         entry.postings().forEach(posting -> validateCurrency(posting.accountId(), posting.delta()));
         entry.authorizations().forEach(auth -> validateCurrency(auth.accountId(), auth.amount()));
         entry.accruals().forEach(accrual -> validateCurrency(accrual.accountId(), accrual.amount()));
@@ -124,37 +124,37 @@ public final class Journal {
 
     void validateCurrency(String accountId, Money amount) {
         if (openingBalance(accountId).currency() != amount.currency()) {
-            throw new RequestRejectedException("Currency mismatch for account: " + accountId);
+            throw new CommandRejectedException("Currency mismatch for account: " + accountId);
         }
     }
 
     private Money openingBalance(String accountId) {
         var opening = openingBalances.get(accountId);
         if (opening == null) {
-            throw new RequestRejectedException("Unknown account: " + accountId);
+            throw new CommandRejectedException("Unknown account: " + accountId);
         }
         return opening;
     }
 
     /**
-     * Original request and its immutable effects, visible together at one sequence.
+     * Original command and its immutable effects, visible together at one sequence.
      * Keeping the input allows retries to be recognized without recalculating outcomes.
      *
      * @param sequence journal-assigned position starting at one, independent of event IDs and dates
-     * @param request original event ID, booked day and input data
+     * @param command original event ID, booked day and input data
      * @param effects postings and decisions calculated on the first submission
      */
-    public record Entry(long sequence, Request request, Effects effects) {
+    public record Entry(long sequence, Command command, Effects effects) {
         public Entry {
-            Objects.requireNonNull(request, "request");
+            Objects.requireNonNull(command, "command");
             Objects.requireNonNull(effects, "effects");
             if (sequence < 1) {
                 throw new IllegalArgumentException("Sequence must be positive");
             }
         }
 
-        public String eventId() { return request.eventId(); }
-        public int bookedDay() { return request.bookedDay(); }
+        public String eventId() { return command.eventId(); }
+        public int bookedDay() { return command.bookedDay(); }
         public List<Posting> postings() { return effects.postings(); }
         public List<Authorization> authorizations() { return effects.authorizations(); }
         public List<Diagnostic> diagnostics() { return effects.diagnostics(); }

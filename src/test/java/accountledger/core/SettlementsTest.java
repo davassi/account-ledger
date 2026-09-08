@@ -60,7 +60,7 @@ class SettlementsTest {
         settlements.settle("E5", 4, "ACC-001", "Auth-A", Money.of(AED, "185.00"), 4);
         var before = journal.entries();
 
-        var error = assertThrows(RequestRejectedException.class,
+        var error = assertThrows(CommandRejectedException.class,
                 () -> settlements.settle("E6", 4, "ACC-001", "Auth-Z", Money.of(AED, "180.00"), 4));
 
         assertEquals("Unknown authorization: Auth-Z", error.getMessage());
@@ -70,15 +70,16 @@ class SettlementsTest {
     }
 
     @Test
-    void aDeclinedReferencePostsWithAnAnomalyAndDoesNotReleaseOtherHolds() {
+    void aDeclinedReferenceIsRecordedWithoutMovingMoney() {
         var declined = authorizations.authorize("DECLINE", 4, "ACC-001", "Declined", Money.of(AED, "620.00"));
         var entry = settlements.settle("CAPTURE", 4, "ACC-001", "Declined", Money.of(AED, "180.00"), 4);
 
         assertEquals(DECLINED, declined.status());
         assertEquals(List.of(DECLINED_AUTHORIZATION), entry.diagnostics());
+        assertEquals(List.of(), entry.postings());
         assertEquals(List.of(authA, declined), authorizations.states(entry.sequence()));
-        assertEquals(Money.of(AED, "470.00"), journal.balance("ACC-001", 4, entry.sequence()));
-        assertEquals(Money.of(AED, "270.00"), authorizations.available("ACC-001", 4, entry.sequence()));
+        assertEquals(Money.of(AED, "650.00"), journal.balance("ACC-001", 4, entry.sequence()));
+        assertEquals(Money.of(AED, "450.00"), authorizations.available("ACC-001", 4, entry.sequence()));
     }
 
     @Test
@@ -120,7 +121,7 @@ class SettlementsTest {
     void referencesAndHoldReleaseAreScopedToTheAccount() {
         journal.append("BHD-FUND", 3, List.of(new Posting("ACC-002", 3, Money.of(BHD, "10.000"))));
         var before = journal.entries();
-        assertThrows(RequestRejectedException.class,
+        assertThrows(CommandRejectedException.class,
                 () -> settlements.settle("BHD-SETTLE", 4, "ACC-002", "Auth-A", Money.of(BHD, "3.334"), 4));
         assertEquals(before, journal.entries());
 

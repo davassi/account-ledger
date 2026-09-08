@@ -29,9 +29,9 @@ public final class Authorizations {
      * have changed. An authorization ID can be used only once per account.
      */
     public Authorization authorize(String eventId, int day, String accountId, String authorizationId, Money amount) {
-        var hold = new Request.Hold(accountId, authorizationId, amount);
-        var request = new Request(eventId, day, hold);
-        var entry = journal.append(request, () -> {
+        var hold = new Command.Hold(accountId, authorizationId, amount);
+        var command = new Command(eventId, day, hold);
+        var entry = journal.append(command, () -> {
             var decision = auth(hold, day, journal.lastSequence());
             return new Journal.Effects(List.of(), List.of(decision));
         });
@@ -77,18 +77,18 @@ public final class Authorizations {
     /** Recognizes captures even when the recorded authorization remains declined. */
     boolean wasSettled(String accountId, String authorizationId, long cutoff) {
         return journal.entries(cutoff).stream()
-                .map(entry -> entry.request().data())
-                .anyMatch(data -> data instanceof Request.Settlement settlement
+                .map(entry -> entry.command().data())
+                .anyMatch(data -> data instanceof Command.Settlement settlement
                         && settlement.accountId().equals(accountId)
                         && settlement.authorizationId().equals(authorizationId));
     }
 
     /** The Authorization Rule */
-    private Authorization auth(Request.Hold hold, int day, long cutoff) {
+    private Authorization auth(Command.Hold hold, int day, long cutoff) {
         var accountId = hold.accountId();
         var authorizationId = hold.authorizationId();
         if (find(accountId, authorizationId, cutoff).isPresent()) {
-            throw new RequestRejectedException("Authorization ID already used for account: " + authorizationId);
+            throw new CommandRejectedException("Authorization ID already used for account: " + authorizationId);
         }
         journal.validateCurrency(accountId, hold.amount());
 

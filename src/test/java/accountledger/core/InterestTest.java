@@ -148,17 +148,17 @@ class InterestTest {
     @Test
     void accrualEffectsAreValidatedAndDefensivelyCopied() {
         openAccount(AED, "0.00");
-        var request = new Request("FACT", 1, new Request.DayClose("A"));
+        var command = new Command("FACT", 1, new Command.DayClose("A"));
         var daily = new ArrayList<>(List.of(new Accrual("A", 1, Money.of(AED, "0.10"))));
         var effects = new Journal.Effects(List.of(), List.of(), List.of(), daily);
         daily.clear();
-        var entry = journal.append(request, () -> effects);
+        var entry = journal.append(command, () -> effects);
         assertEquals(1, entry.accruals().size());
         assertThrows(UnsupportedOperationException.class, () -> entry.accruals().clear());
         assertThrows(IllegalArgumentException.class, () -> interest.accruals("A", -1));
         assertThrows(IllegalArgumentException.class, () -> interest.accruals("A", journal.lastSequence() + 1));
 
-        var invalid = new Request("INVALID", 1, new Request.DayClose("A"));
+        var invalid = new Command("INVALID", 1, new Command.DayClose("A"));
         assertThrows(IllegalArgumentException.class, () -> journal.append(invalid,
                 () -> new Journal.Effects(List.of(), List.of(), List.of(),
                         List.of(new Accrual("A", 1, Money.of(BHD, "0.100"))))));

@@ -7,7 +7,7 @@ import accountledger.core.Interest;
 import accountledger.core.Journal;
 import accountledger.core.Posting;
 import accountledger.core.Rejection;
-import accountledger.core.Request;
+import accountledger.core.Command;
 import accountledger.domain.Money;
 
 import java.util.List;
@@ -32,8 +32,8 @@ class ScenarioTest {
         var eventIds = IntStream.rangeClosed(1, 10).mapToObj(number -> "E" + number).toList();
         assertEquals(eventIds.stream().filter(id -> !id.equals("E6")).toList(),
                 journal.entries().stream().map(Journal.Entry::eventId).filter(eventIds::contains).toList());
-        assertEquals(List.of(new Rejection(4, new Request("E6", 4,
-                        new Request.Settlement("ACC-001", "Auth-Z", Money.of(AED, "180.00"), 4)),
+        assertEquals(List.of(new Rejection(4, new Command("E6", 4,
+                        new Command.Settlement("ACC-001", "Auth-Z", Money.of(AED, "180.00"), 4)),
                 "Unknown authorization: Auth-Z")), scenario.rejections());
 
         var e9 = journal.find("E9", cutoff).orElseThrow();
@@ -58,7 +58,7 @@ class ScenarioTest {
         });
         long lastClose = journal.find("CLOSE-ACC-002-6", cutoff).orElseThrow().sequence();
         var capitalizations = journal.entries().stream()
-                .filter(entry -> entry.request().data() instanceof Request.InterestCapitalization).toList();
+                .filter(entry -> entry.command().data() instanceof Command.InterestCapitalization).toList();
         assertEquals(2, capitalizations.size());
         capitalizations.forEach(entry -> assertTrue(entry.sequence() > lastClose));
     }

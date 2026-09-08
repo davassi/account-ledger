@@ -91,7 +91,7 @@ debit that must be honoured despite a missing authorization. There is no
 sufficient basis for refusing it.
 
 Settlements now refuses a reference that is absent from the requested account's
-history. Replay logs E6's failure on Day 4, and no posting or entry is created:
+history. CommandProcessor logs E6's failure on Day 4, and no posting or entry is created:
 the ledger and available balance both stay at AED 465.00 after E5 and the
 refused E6.
 
@@ -100,7 +100,7 @@ later retry can succeed once the matching authorization exists.
 
 Note the limit of this criterion: it says nothing about an authorization that is
 *present but declined*. That case follows the separate policy documented in
-[AMBIGUITIES.md](AMBIGUITIES.md) — the debit is accepted and flagged.
+[AMBIGUITIES.md](AMBIGUITIES.md) — the attempt is recorded and flagged, but no debit is posted.
 
 ## 5 — Accept the conditional hold rule
 
@@ -213,8 +213,8 @@ reserving money after it has been settled.
 
 **Two places deciding what a repeat was.** The first authorization component
 duplicated the journal's lookup and comparison. Both paths were replaced by a
-single comparison of the immutable request inside the journal. Effects are now
-calculated only for genuinely new requests, so a repeat can never turn a
+single comparison of the immutable command inside the journal. Effects are now
+calculated only for genuinely new commands, so a repeat can never turn a
 recorded decline into an approval just because money arrived in between.
 
 **An available balance that only knew "now".** The first version always used the
@@ -225,7 +225,7 @@ the distinction the whole historical-view design now rests on.
 
 **Generic exceptions for expected failures.** Domain failures used to raise a
 general-purpose argument exception. They now raise a specific rejection type,
-which keeps the old supertype but lets Replay catch only what it expects and
+which keeps the old supertype but lets CommandProcessor catch only what it expects and
 leave real faults alone.
 
 **The scenario living inside a test.** The full event stream was originally
@@ -238,7 +238,7 @@ dismissed the settlement requirement in criterion 4 simply because the brief's
 fixed rules did not mention that behaviour. The audit withdrew that reasoning: a
 chosen policy that contradicts a valid criterion is a gap to close, not evidence
 that the criterion is wrong. Missing references are now refused at the existing
-Replay boundary, and the obsolete diagnostic and a redundant reservation check
+CommandProcessor boundary, and the obsolete diagnostic and a redundant reservation check
 were both removed. No new retry mechanism or settlement state was needed.
 
 **An automatic fee-refund component.** Proposed while exploring the

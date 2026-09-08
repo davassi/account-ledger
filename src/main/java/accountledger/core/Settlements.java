@@ -24,38 +24,40 @@ public final class Settlements {
      * hold at the recording sequence. Available funds do not limit a settlement.
      *
      * <p>A missing authorization is rejected without changing the journal. A
-     * declined but recorded authorization produces a debit with a diagnostic.
-     * One final settlement is allowed per account and authorization reference;
+     * declined but recorded authorization is recorded with a diagnostic and moves
+     * no money: a decline is final, so no capture against it can be honoured.
+     * One settlement is recorded per account and authorization reference;
      * identical event retries return their original entry.
      */
     public Journal.Entry settle(String eventId, int bookedDay, String accountId, String authorizationId,
                                 Money amount, int valueDay) {
-        var settlement = new Request.Settlement(accountId, authorizationId, amount, valueDay);
-        var request = new Request(eventId, bookedDay, settlement);
-        return journal.append(request, () -> {
+        var settlement = new Command.Settlement(accountId, authorizationId, amount, valueDay);
+        var command = new Command(eventId, bookedDay, settlement);
+        return journal.append(command, () -> {
             long cutoff = journal.lastSequence();
-            var postings = List.of(prepareDebit(settlement, cutoff));
+            validate(settlement, cutoff);
             var authorization = authorizations.find(accountId, authorizationId, cutoff)
-                    .orElseThrow(() -> new RequestRejectedException("Unknown authorization: " + authorizationId));
+                    .orElseThrow(() -> new CommandRejectedException("Unknown authorization: " + authorizationId));
             if (authorization.status() == DECLINED) {
-                return new Journal.Effects(postings, List.of(), List.of(DECLINED_AUTHORIZATION));
+                // The attempt becomes an auditable fact; refusing the decline keeps the money still.
+                return new Journal.Effects(List.of(), List.of(), List.of(DECLINED_AUTHORIZATION));
             }
 
+            var debit = new Posting(accountId, valueDay, amount.negate());
             var settled = new Authorization(accountId, authorizationId, authorization.amount(), SETTLED);
-            return new Journal.Effects(postings, List.of(settled));
+            return new Journal.Effects(List.of(debit), List.of(settled));
         });
     }
 
-    private Posting prepareDebit(Request.Settlement settlement, long cutoff) {
+    /** Rejects malformed input and a reference this account has already settled or refused. */
+    private void validate(Command.Settlement settlement, long cutoff) {
         var authorizationId = Objects.requireNonNull(settlement.authorizationId(), "authorizationId");
         var amount = Objects.requireNonNull(settlement.amount(), "amount");
         if (authorizationId.isBlank() || amount.signum() <= 0) {
-            throw new RequestRejectedException("Settlement requires an authorization ID and a positive amount");
+            throw new CommandRejectedException("Settlement requires an authorization ID and a positive amount");
         }
-        var debit = new Posting(settlement.accountId(), settlement.valueDay(), amount.negate());
         if (authorizations.wasSettled(settlement.accountId(), authorizationId, cutoff)) {
-            throw new RequestRejectedException("Authorization reference already settled: " + authorizationId);
+            throw new CommandRejectedException("Settlement already recorded for authorization: " + authorizationId);
         }
-        return debit;
     }
 }

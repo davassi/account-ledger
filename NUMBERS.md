@@ -76,7 +76,7 @@ for daily interest.
 
 | Number | Where it comes from |
 | --- | --- |
-| Approval boundary at 0 | Imposed: available funds may land exactly on zero. Requiring more would refuse valid requests; allowing less would permit unfunded holds. |
+| Approval boundary at 0 | Imposed: available funds may land exactly on zero. Requiring more would refuse valid commands; allowing less would permit unfunded holds. |
 | Hold amount above 0 | Chosen. Zero would reserve nothing, and a negative hold would *increase* availability. There is no arbitrary minimum above the currency's smallest unit. |
 | 200.00 and 90.00 AED | The holds requested by E3 and E8. |
 | 50.00 AED | 250.00 less Auth-A's 200.00 — both the expected availability and the exact second hold that would consume it. Anything smaller misses the equality boundary. |
@@ -85,7 +85,7 @@ for daily interest.
 | 400.00 AED | E4's credit, reused as a hold larger than the 250.00 balance and in a future-value credit test, rather than inventing another figure. |
 | -170.00 and 450.00 AED | In a holds-only fixture: 250 + 400 - 620 - 200, then +620. No settlements or fees involved. They confirm that later debits and compensation never rewrite a recorded decision. |
 | 10.000 BHD | E10's amount reused as funding, so holding all of it tests the zero-availability boundary at three decimals. |
-| One decision and zero postings per authorization | One request produces one approval or decline, and moves no money. Structural, not tunable. |
+| One decision and zero postings per authorization | One command produces one approval or decline, and moves no money. Structural, not tunable. |
 | -570.00 AED | Day 2 once E7 is known, before fees: 250 - 620 - 200. The saved original close still reports 50.00 available, because it predates E7. |
 | 50.00 hold and 400.00 credit on Day 5 | Existing amounts reused to tell apart an original close, a later exhausted balance and a later funded one. None of these may leak into an earlier view. |
 | Cutoff -1 and last + 1 | The first invalid position on each side. Zero is valid and means empty. |
@@ -148,11 +148,11 @@ for daily interest.
 | Processing days 5 and 6; booked Day 5, value Day 2 | The scenario's separate clocks reused, so two failed reversals keep their input while recording different processing dates. |
 | AED 250.00, hold 200.00, settlement 0.00 then 185.00 | The brief's amounts reused. The refused zero settlement leaves the ledger at 250 and availability at 50; the corrected one releases the hold and leaves 65. |
 | AED 185.00 settled before its 200.00 authorization exists | A missing reference leaves the opening 250.00 untouched. Once the authorization arrives, an explicit retry settles once and leaves 65.00 — confirming the rejection reserved neither the reference nor the event ID. |
-| AED 10.00 against BHD 10.000 | Equal numbers reused to isolate account and currency errors in a multi-posting request. A valid first posting must not survive the second being refused. |
+| AED 10.00 against BHD 10.000 | Equal numbers reused to isolate account and currency errors in a multi-posting command. A valid first posting must not survive the second being refused. |
 | AED -10.00 and +10.00 | A reversal succeeding once its missing original arrives, restoring 250 exactly. |
 | AED 300.00 hold, 50.00 settlement, later 300.00 credit | A hold above the opening 250 is declined, and settling that recorded reference produces a diagnostic. The later credit confirms an accepted repeat still preserves the earlier decline. A smaller hold would simply have been affordable. |
 | Day 6 capitalization, late +250.00 on Day 5, final 500.80 | The interest fixture reused to test the dispatch path and recovery after a stale-accrual rejection. Submitting capitalization as booked Day 5 must fail rather than quietly rewrite the date. |
-| Processing day 0; settlement value day 0 | The first invalid day on each path. The first is a caller mistake caught before execution; the second is an expected rejection carrying a complete request. |
+| Processing day 0; settlement value day 0 | The first invalid day on each path. The first is a caller mistake caught before execution; the second is an expected rejection carrying a complete command. |
 
 ## The runnable scenario
 
@@ -181,7 +181,7 @@ for daily interest.
 | Revised AED closes 250.00, 225.00, 625.00, 415.00, 390.00, 390.93 | The same value days seen with final knowledge. Only Day 6 includes the interest credit. |
 | Original BHD Day 5 0.000 against revised 10.000; Day 6 10.008 | E10 belongs to value Day 5 but arrives during Day 6 — the prescribed late-arrival case. The last figure includes 0.008 of interest. |
 | 11 of 12 account rows show no new fees | Only ACC-001 on Day 5 has assessments, showing three charges at value days 2, 4 and 5. The count catches a fee being displayed again on later days. |
-| One error on Day 4; two identical failures in a fixture | E6 is the stream's only rejection. A separate fixture repeats one failed request to confirm both attempts survive rather than being merged. |
+| One error on Day 4; two identical failures in a fixture | E6 is the stream's only rejection. A separate fixture repeats one failed command to confirm both attempts survive rather than being merged. |
 | Fixture booked Day 1, received Day 2; changes on Day 3 | Confirms backdated errors and diagnostics appear on the day they arrived, and that anything after the last snapshot cannot alter a saved report. The smallest distinct days that show this. |
 | Fixture amounts 250.00, 200.00, 400.00, 185.00, 180.00, 300.00, 50.00 AED | Existing funding, hold, settlement, rejection and decline cases reused, so snapshot behaviour is tested without inventing new thresholds. |
 

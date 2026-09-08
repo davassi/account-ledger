@@ -27,11 +27,11 @@ public final class DailyClosing {
      * Closes the next day for this account; the returned sequence includes its fees. 
      */
     public Journal.Entry close(String eventId, int day, String accountId) {
-        var request = new Request(eventId, day, new Request.DayClose(accountId));
-        return journal.append(request, () -> {
+        var command = new Command(eventId, day, new Command.DayClose(accountId));
+        return journal.append(command, () -> {
             long cutoff = journal.lastSequence();
             if (day != lastClosedDay(accountId, cutoff) + 1) {
-                throw new RequestRejectedException("Close days in order, starting at Day 1");
+                throw new CommandRejectedException("Close days in order, starting at Day 1");
             }
             return closingEffects(accountId, day, cutoff);
         });
@@ -39,12 +39,12 @@ public final class DailyClosing {
 
     /** Reassesses closed days after a backdated event; processingDay is when fees are discovered. */
     public Journal.Entry reassess(String eventId, int processingDay, String accountId) {
-        var request = new Request(eventId, processingDay, new Request.FeeReassessment(accountId));
-        return journal.append(request, () -> {
+        var command = new Command(eventId, processingDay, new Command.FeeReassessment(accountId));
+        return journal.append(command, () -> {
             long cutoff = journal.lastSequence();
             int throughDay = lastClosedDay(accountId, cutoff);
             if (throughDay == 0 || processingDay < throughDay) {
-                throw new RequestRejectedException("Reassessment requires closed days at or before the processing day");
+                throw new CommandRejectedException("Reassessment requires closed days at or before the processing day");
             }
             return closingEffects(accountId, throughDay, cutoff);
         });
@@ -53,8 +53,8 @@ public final class DailyClosing {
     /** Returns the original fee postings, even if later entries compensate them. */
     public List<Posting> fees(String accountId, long knownThroughSequence) {
         return journal.entries(knownThroughSequence).stream()
-                .filter(entry -> entry.request().data() instanceof Request.DayClose
-                        || entry.request().data() instanceof Request.FeeReassessment)
+                .filter(entry -> entry.command().data() instanceof Command.DayClose
+                        || entry.command().data() instanceof Command.FeeReassessment)
                 .flatMap(entry -> entry.postings().stream())
                 .filter(posting -> posting.accountId().equals(accountId))
                 .toList();
@@ -62,7 +62,7 @@ public final class DailyClosing {
 
     private int lastClosedDay(String accountId, long cutoff) {
         return journal.entries(cutoff).stream()
-                .filter(entry -> entry.request().data() instanceof Request.DayClose close
+                .filter(entry -> entry.command().data() instanceof Command.DayClose close
                         && close.accountId().equals(accountId))
                 .mapToInt(Journal.Entry::bookedDay)
                 .max().orElse(0);
@@ -89,7 +89,7 @@ public final class DailyClosing {
                 return;
             }
             if (balance.currency() != OVERDRAFT_FEE.currency()) {
-                throw new RequestRejectedException("No overdraft fee defined for currency: " + balance.currency());
+                throw new CommandRejectedException("No overdraft fee defined for currency: " + balance.currency());
             }
             newFees.add(new Posting(accountId, day, OVERDRAFT_FEE.negate()));
         });

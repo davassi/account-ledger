@@ -19,42 +19,42 @@ class JournalIdempotencyTest {
     @Test
     void onlyANewRequestCalculatesEffects() {
         var input = new ArrayList<>(List.of(credit));
-        var request = new Request("E1", 1, new Request.Postings(input));
-        var original = journal.append(request, () -> new Journal.Effects(input, List.of()));
+        var command = new Command("E1", 1, new Command.Postings(input));
+        var original = journal.append(command, () -> new Journal.Effects(input, List.of()));
         input.clear();
 
-        var retry = new Request("E1", 1, new Request.Postings(List.of(credit)));
+        var retry = new Command("E1", 1, new Command.Postings(List.of(credit)));
         assertSame(original, journal.append(retry, () -> fail("A retry must never recompute effects")));
         assertSame(original, journal.append("E1", 1, List.of(credit)));
         assertEquals(List.of(original), journal.entries());
-        assertEquals(retry, original.request());
-        assertThrows(UnsupportedOperationException.class, () -> ((Request.Postings) request.data()).postings().clear());
+        assertEquals(retry, original.command());
+        assertThrows(UnsupportedOperationException.class, () -> ((Command.Postings) command.data()).postings().clear());
     }
 
     @Test
     void conflictingInputIsRejectedBeforeCalculatingEffects() {
         var original = journal.append("E1", 1, List.of(credit));
         var conflicts = List.of(
-                new Request("E1", 2, new Request.Postings(List.of(credit))),
-                new Request("E1", 1, new Request.Postings(List.of())),
-                new Request("E1", 1, new Request.Hold("ACC-001", "A", credit.delta())));
+                new Command("E1", 2, new Command.Postings(List.of(credit))),
+                new Command("E1", 1, new Command.Postings(List.of())),
+                new Command("E1", 1, new Command.Hold("ACC-001", "A", credit.delta())));
 
-        conflicts.forEach(request -> assertThrows(IllegalArgumentException.class,
-                () -> journal.append(request, () -> fail("A conflicting ID must never calculate effects"))));
+        conflicts.forEach(command -> assertThrows(IllegalArgumentException.class,
+                () -> journal.append(command, () -> fail("A conflicting ID must never calculate effects"))));
         assertEquals(List.of(original), journal.entries());
     }
 
     @Test
     void failedComputationOrValidationDoesNotReserveTheEventId() {
-        var request = new Request("E1", 1, new Request.Postings(List.of(credit)));
-        assertThrows(IllegalStateException.class, () -> journal.append(request, () -> {
+        var command = new Command("E1", 1, new Command.Postings(List.of(credit)));
+        assertThrows(IllegalStateException.class, () -> journal.append(command, () -> {
             throw new IllegalStateException("Computation failed");
         }));
         assertEquals(List.of(), journal.entries());
 
         var invalid = new Posting("UNKNOWN", 1, credit.delta());
         assertThrows(IllegalArgumentException.class,
-                () -> journal.append(request, () -> new Journal.Effects(List.of(credit, invalid), List.of())));
+                () -> journal.append(command, () -> new Journal.Effects(List.of(credit, invalid), List.of())));
         assertEquals(List.of(), journal.entries());
 
         var accepted = journal.append("E1", 1, List.of(credit));

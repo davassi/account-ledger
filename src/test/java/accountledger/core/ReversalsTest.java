@@ -44,7 +44,7 @@ class ReversalsTest {
         var reversal = reversals.reverse("E9", 6, "ACC-001", "E7", 2);
 
         assertEquals(before.size() + 1, reversal.sequence());
-        assertEquals(new Request.Reversal("ACC-001", "E7", 2), reversal.request().data());
+        assertEquals(new Command.Reversal("ACC-001", "E7", 2), reversal.command().data());
         assertEquals(List.of(aed(2, "620.00")), reversal.postings());
         assertEquals(List.of(), reversal.authorizations());
         assertEquals(List.of(), reversal.diagnostics());
@@ -89,21 +89,30 @@ class ReversalsTest {
         assertEquals(Money.of(AED, "-155.00"), journal.balance("ACC-001", 6, reversal.sequence()));
     }
 
-    @ParameterizedTest
-    @CsvSource({"E5, 185.00, 30.00", "DECLINED, 180.00, -155.00"})
-    void aSettlementRefundDoesNotReopenHoldsOrEraseDiagnostics(String reference, String amount, String balance) {
-        if (reference.equals("DECLINED")) {
-            authorizations.authorize("HOLD", 5, "ACC-001", "Declined", Money.of(AED, "180.00"));
-            new Settlements(journal).settle(reference, 5, "ACC-001", "Declined", Money.of(AED, amount), 4);
-        }
+    @Test
+    void aSettlementRefundDoesNotReopenHoldsOrEraseDiagnostics() {
         var states = authorizations.states(journal.lastSequence());
-        var original = journal.find(reference, journal.lastSequence()).orElseThrow();
-        var reversal = reversals.reverse("REFUND", 6, "ACC-001", reference, 4);
+        var original = journal.find("E5", journal.lastSequence()).orElseThrow();
+        var reversal = reversals.reverse("REFUND", 6, "ACC-001", "E5", 4);
 
-        assertEquals(List.of(aed(4, amount)), reversal.postings());
-        assertEquals(Money.of(AED, balance), authorizations.available("ACC-001", 6, reversal.sequence()));
+        assertEquals(List.of(aed(4, "185.00")), reversal.postings());
+        assertEquals(Money.of(AED, "30.00"), authorizations.available("ACC-001", 6, reversal.sequence()));
         assertEquals(states, authorizations.states(reversal.sequence()));
-        assertSame(original, journal.find(reference, reversal.sequence()).orElseThrow());
+        assertSame(original, journal.find("E5", reversal.sequence()).orElseThrow());
+    }
+
+    @Test
+    void aSettlementRecordedAgainstADeclinedReferenceHasNothingToReverse() {
+        authorizations.authorize("HOLD", 5, "ACC-001", "Declined", Money.of(AED, "180.00"));
+        var recorded = new Settlements(journal).settle("DECLINED", 5, "ACC-001", "Declined",
+                Money.of(AED, "180.00"), 4);
+        assertEquals(List.of(), recorded.postings());
+        var before = journal.lastSequence();
+
+        // It moved no money, so there is no compensation to append.
+        assertThrows(CommandRejectedException.class,
+                () -> reversals.reverse("REFUND", 6, "ACC-001", "DECLINED", 4));
+        assertEquals(before, journal.lastSequence());
     }
 
     @Test
