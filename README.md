@@ -223,8 +223,8 @@ All application code is under [`src/main/java/accountledger`](src/main/java/acco
 
 | Package | Responsibility |
 | --- | --- |
-| [`accountledger.domain`](src/main/java/accountledger/domain) | `Money` and `CurrencyUnit`: currency precision and monetary arithmetic. |
-| [`accountledger.core`](src/main/java/accountledger/core) | Journal, commands, accounting operations and their records, including command processing. |
+| [`accountledger.domain`](src/main/java/accountledger/domain) | `Money` and `CurrencyUnit`, and the immutable records that carry commands and their effects: `Account`, `Command`, `Posting`, `Authorization`, `Accrual`, `Diagnostic`, `Rejection`, `CommandRejectedException`. |
+| [`accountledger.core`](src/main/java/accountledger/core) | The journal and the accounting operations that read and write it: command processing, authorizations, settlements, reversals, daily closing and interest. |
 | [`accountledger.scenario`](src/main/java/accountledger/scenario) | The executable six-day scenario and its daily report. |
 
 `domain` is independent, `core` uses `domain`, and `scenario` uses both.
@@ -262,17 +262,159 @@ flowchart TD
 
 The operations above read and write these records. Only postings move money.
 
+```mermaid
+classDiagram
+    class Money {
+        <<record>>
+        CurrencyUnit currency
+        BigDecimal amount
+    }
+    class CurrencyUnit {
+        <<enum>>
+        AED
+        BHD
+    }
+    Money --> CurrencyUnit
+
+    class Account {
+        <<record>>
+        String id
+        Money openingBalance
+    }
+    Account --> Money : openingBalance
+
+    class Command {
+        <<record>>
+        String eventId
+        int bookedDay
+        Data data
+    }
+    class Data {
+        <<sealed interface>>
+    }
+    Command --> Data
+
+    class Postings {
+        <<record>>
+        List~Posting~ postings
+    }
+    class Hold {
+        <<record>>
+        String accountId
+        String authorizationId
+        Money amount
+    }
+    class Settlement {
+        <<record>>
+        String accountId
+        String authorizationId
+        Money amount
+        int valueDay
+    }
+    class Reversal {
+        <<record>>
+        String accountId
+        String originalEventId
+        int valueDay
+    }
+    class DayClose {
+        <<record>>
+        String accountId
+    }
+    class FeeReassessment {
+        <<record>>
+        String accountId
+    }
+    class InterestCapitalization {
+        <<record>>
+        String accountId
+    }
+    Data <|.. Postings
+    Data <|.. Hold
+    Data <|.. Settlement
+    Data <|.. Reversal
+    Data <|.. DayClose
+    Data <|.. FeeReassessment
+    Data <|.. InterestCapitalization
+
+    class Posting {
+        <<record>>
+        String accountId
+        int valueDay
+        Money delta
+    }
+    Posting --> Money : delta
+    Postings --> "*" Posting
+
+    class Authorization {
+        <<record>>
+        String accountId
+        String id
+        Money amount
+        Status status
+    }
+    class Status {
+        <<enum>>
+        APPROVED
+        DECLINED
+        SETTLED
+    }
+    Authorization --> Money : amount
+    Authorization --> Status
+
+    class Accrual {
+        <<record>>
+        String accountId
+        int day
+        Money amount
+    }
+    Accrual --> Money : amount
+
+    class Diagnostic {
+        <<enum>>
+        DECLINED_AUTHORIZATION
+    }
+
+    class Rejection {
+        <<record>>
+        int processingDay
+        Command command
+        String reason
+    }
+    Rejection --> Command
+
+    class Entry {
+        <<record>>
+        long sequence
+        Command command
+        Effects effects
+    }
+    class Effects {
+        <<record>>
+        List~Posting~ postings
+        List~Authorization~ authorizations
+        List~Diagnostic~ diagnostics
+        List~Accrual~ accruals
+    }
+    Entry --> Command
+    Entry --> Effects
+    Effects --> "*" Posting
+    Effects --> "*" Authorization
+    Effects --> "*" Diagnostic
+    Effects --> "*" Accrual
+```
+
 | Record | Role |
 | --- | --- |
-| [Command](src/main/java/accountledger/core/Command.java) · `Command.Data` | The input: an event ID, a booked day and one of seven typed payloads — `Postings`, `Hold`, `Settlement`, `Reversal`, `DayClose`, `FeeReassessment`, `InterestCapitalization`. Record equality decides whether a submission is a retry. |
-| [Account](src/main/java/accountledger/core/Account.java) | An ID and an opening balance. The balance carries the currency, so the account does not repeat it. |
+| [Command](src/main/java/accountledger/domain/Command.java) · `Command.Data` | The input: an event ID, a booked day and one of seven typed payloads — `Postings`, `Hold`, `Settlement`, `Reversal`, `DayClose`, `FeeReassessment`, `InterestCapitalization`. Record equality decides whether a submission is a retry. |
+| [Account](src/main/java/accountledger/domain/Account.java) | An ID and an opening balance. The balance carries the currency, so the account does not repeat it. |
 | [Journal.Entry](src/main/java/accountledger/core/Journal.java) · `Effects` | One accepted command and everything it produced, visible together under one sequence. E10 is one entry with three postings. |
-| [Posting](src/main/java/accountledger/core/Posting.java) | One account, one signed amount, one value day. A line, not a transaction: one command may produce several. |
-| [Authorization](src/main/java/accountledger/core/Authorization.java) | A hold decision — `APPROVED`, `DECLINED` or `SETTLED` — with the original hold amount. Only the latest approved state reserves funds. |
-| [Accrual](src/main/java/accountledger/core/Accrual.java) | Rounded interest for one value day. A fact, not money, until capitalization posts the total. |
-| [Diagnostic](src/main/java/accountledger/core/Diagnostic.java) | An anomaly on an accepted entry; the account and reference are in that entry's command. |
-| [Rejection](src/main/java/accountledger/core/Rejection.java) | One failed attempt with its processing day and reason. Kept by `CommandProcessor`, outside the journal. |
-| [CommandRejectedException](src/main/java/accountledger/core/CommandRejectedException.java) | The expected domain failure `CommandProcessor` catches and records; anything else propagates. |
+| [Posting](src/main/java/accountledger/domain/Posting.java) | One account, one signed amount, one value day. A line, not a transaction: one command may produce several. |
+| [Authorization](src/main/java/accountledger/domain/Authorization.java) | A hold decision — `APPROVED`, `DECLINED` or `SETTLED` — with the original hold amount. Only the latest approved state reserves funds. |
+| [Accrual](src/main/java/accountledger/domain/Accrual.java) | Rounded interest for one value day. A fact, not money, until capitalization posts the total. |
+| [Diagnostic](src/main/java/accountledger/domain/Diagnostic.java) | An anomaly on an accepted entry; the account and reference are in that entry's command. |
+| [Rejection](src/main/java/accountledger/domain/Rejection.java) | One failed attempt with its processing day and reason. Kept by `CommandProcessor`, outside the journal. |
+| [CommandRejectedException](src/main/java/accountledger/domain/CommandRejectedException.java) | The expected domain failure `CommandProcessor` catches and records; anything else propagates. |
 | [Money](src/main/java/accountledger/domain/Money.java) · [CurrencyUnit](src/main/java/accountledger/domain/CurrencyUnit.java) | An exact decimal at its currency's scale — AED 2 places, BHD 3 — with explicit rounding and installment splitting. |
 
 ---

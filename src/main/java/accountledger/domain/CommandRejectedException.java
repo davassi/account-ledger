@@ -1,4 +1,4 @@
-package accountledger.core;
+package accountledger.domain;
 
 /** An expected domain rejection that the command processor can record and continue past. */
 public final class CommandRejectedException extends IllegalArgumentException {

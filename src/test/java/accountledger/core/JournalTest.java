@@ -1,7 +1,9 @@
 package accountledger.core;
 
+import accountledger.domain.Account;
 import accountledger.domain.CurrencyUnit;
 import accountledger.domain.Money;
+import accountledger.domain.Posting;
 
 import java.util.ArrayList;
 import java.util.List;

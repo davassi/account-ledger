@@ -1,6 +1,4 @@
-package accountledger.core;
-
-import accountledger.domain.Money;
+package accountledger.domain;
 
 import java.util.List;
 import java.util.Objects;

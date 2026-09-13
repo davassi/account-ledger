@@ -1,21 +1,21 @@
 package accountledger.scenario;
 
-import accountledger.core.Authorization;
+import accountledger.domain.Authorization;
 import accountledger.core.Authorizations;
 import accountledger.core.DailyClosing;
 import accountledger.core.Interest;
 import accountledger.core.Journal;
-import accountledger.core.Posting;
-import accountledger.core.Rejection;
-import accountledger.core.Command;
+import accountledger.domain.Posting;
+import accountledger.domain.Rejection;
+import accountledger.domain.Command;
 import accountledger.domain.Money;
 
 import java.util.List;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 
-import static accountledger.core.Authorization.Status.DECLINED;
-import static accountledger.core.Authorization.Status.SETTLED;
+import static accountledger.domain.Authorization.Status.DECLINED;
+import static accountledger.domain.Authorization.Status.SETTLED;
 import static accountledger.domain.CurrencyUnit.AED;
 import static accountledger.domain.CurrencyUnit.BHD;
 import static org.junit.jupiter.api.Assertions.assertEquals;

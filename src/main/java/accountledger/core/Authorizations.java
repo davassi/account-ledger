@@ -1,5 +1,8 @@
 package accountledger.core;
 
+import accountledger.domain.Authorization;
+import accountledger.domain.Command;
+import accountledger.domain.CommandRejectedException;
 import accountledger.domain.Money;
 
 import java.util.LinkedHashMap;
@@ -7,8 +10,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-import static accountledger.core.Authorization.Status.APPROVED;
-import static accountledger.core.Authorization.Status.DECLINED;
+import static accountledger.domain.Authorization.Status.APPROVED;
+import static accountledger.domain.Authorization.Status.DECLINED;
 
 /**
  * Decides holds using current knowledge and reads the recorded outcomes.

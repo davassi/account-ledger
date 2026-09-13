@@ -1,7 +1,12 @@
 package accountledger.core;
 
+import accountledger.domain.Account;
+import accountledger.domain.Accrual;
+import accountledger.domain.Authorization;
+import accountledger.domain.Command;
 import accountledger.domain.CurrencyUnit;
 import accountledger.domain.Money;
+import accountledger.domain.Posting;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -10,7 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
-import static accountledger.core.Authorization.Status.DECLINED;
+import static accountledger.domain.Authorization.Status.DECLINED;
 import static accountledger.domain.CurrencyUnit.AED;
 import static accountledger.domain.CurrencyUnit.BHD;
 import static org.junit.jupiter.api.Assertions.assertEquals;

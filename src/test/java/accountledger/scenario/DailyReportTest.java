@@ -1,12 +1,12 @@
 package accountledger.scenario;
 
-import accountledger.core.Account;
+import accountledger.domain.Account;
 import accountledger.core.Authorizations;
 import accountledger.core.DailyClosing;
 import accountledger.core.Journal;
-import accountledger.core.Posting;
+import accountledger.domain.Posting;
 import accountledger.core.CommandProcessor;
-import accountledger.core.Command;
+import accountledger.domain.Command;
 import accountledger.core.Settlements;
 import accountledger.domain.Money;
 

@@ -1,13 +1,18 @@
 package accountledger.core;
 
+import accountledger.domain.Authorization;
+import accountledger.domain.Command;
+import accountledger.domain.CommandRejectedException;
+import accountledger.domain.Diagnostic;
 import accountledger.domain.Money;
+import accountledger.domain.Posting;
 
 import java.util.List;
 import java.util.Objects;
 
-import static accountledger.core.Authorization.Status.DECLINED;
-import static accountledger.core.Authorization.Status.SETTLED;
-import static accountledger.core.Diagnostic.DECLINED_AUTHORIZATION;
+import static accountledger.domain.Authorization.Status.DECLINED;
+import static accountledger.domain.Authorization.Status.SETTLED;
+import static accountledger.domain.Diagnostic.DECLINED_AUTHORIZATION;
 
 /** Posts final settlements and releases approved holds through new journal entries. */
 public final class Settlements {

@@ -1,11 +1,11 @@
 package accountledger.scenario;
 
-import accountledger.core.Account;
+import accountledger.domain.Account;
 import accountledger.core.Journal;
-import accountledger.core.Posting;
-import accountledger.core.Rejection;
+import accountledger.domain.Posting;
+import accountledger.domain.Rejection;
 import accountledger.core.CommandProcessor;
-import accountledger.core.Command;
+import accountledger.domain.Command;
 import accountledger.domain.Money;
 
 import java.io.PrintStream;

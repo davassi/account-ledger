@@ -3,7 +3,7 @@ package accountledger.scenario;
 import accountledger.core.Authorizations;
 import accountledger.core.DailyClosing;
 import accountledger.core.Journal;
-import accountledger.core.Rejection;
+import accountledger.domain.Rejection;
 import accountledger.domain.Money;
 
 import java.io.PrintStream;

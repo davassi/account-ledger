@@ -1,6 +1,8 @@
 package accountledger.core;
 
+import accountledger.domain.Account;
 import accountledger.domain.Money;
+import accountledger.domain.Posting;
 
 import java.util.List;
 import org.junit.jupiter.api.Test;
