@@ -3,8 +3,8 @@ package accountledger.domain;
 import java.math.BigDecimal;
 import org.junit.jupiter.api.Test;
 
-import static accountledger.domain.CurrencyUnit.AED;
-import static accountledger.domain.CurrencyUnit.BHD;
+import static accountledger.domain.enums.CurrencyUnit.AED;
+import static accountledger.domain.enums.CurrencyUnit.BHD;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 

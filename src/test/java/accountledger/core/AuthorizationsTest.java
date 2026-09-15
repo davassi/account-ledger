@@ -3,7 +3,7 @@ package accountledger.core;
 import accountledger.domain.Account;
 import accountledger.domain.Authorization;
 import accountledger.domain.Command;
-import accountledger.domain.CurrencyUnit;
+import accountledger.domain.enums.CurrencyUnit;
 import accountledger.domain.Money;
 import accountledger.domain.Posting;
 
@@ -21,8 +21,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import static accountledger.domain.Authorization.Status.APPROVED;
 import static accountledger.domain.Authorization.Status.DECLINED;
-import static accountledger.domain.CurrencyUnit.AED;
-import static accountledger.domain.CurrencyUnit.BHD;
+import static accountledger.domain.enums.CurrencyUnit.AED;
+import static accountledger.domain.enums.CurrencyUnit.BHD;
 
 class AuthorizationsTest {
     private final Journal journal = new Journal(

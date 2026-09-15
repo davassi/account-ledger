@@ -412,10 +412,10 @@ classDiagram
 | [Posting](src/main/java/accountledger/domain/Posting.java) | One account, one signed amount, one value day. A line, not a transaction: one command may produce several. |
 | [Authorization](src/main/java/accountledger/domain/Authorization.java) | A hold decision — `APPROVED`, `DECLINED` or `SETTLED` — with the original hold amount. Only the latest approved state reserves funds. |
 | [Accrual](src/main/java/accountledger/domain/Accrual.java) | Rounded interest for one value day. A fact, not money, until capitalization posts the total. |
-| [Diagnostic](src/main/java/accountledger/domain/Diagnostic.java) | An anomaly on an accepted entry; the account and reference are in that entry's command. |
+| [Diagnostic](src/main/java/accountledger/domain/enums/Diagnostic.java) | An anomaly on an accepted entry; the account and reference are in that entry's command. |
 | [Rejection](src/main/java/accountledger/domain/Rejection.java) | One failed attempt with its processing day and reason. Kept by `CommandProcessor`, outside the journal. |
 | [CommandRejectedException](src/main/java/accountledger/domain/CommandRejectedException.java) | The expected domain failure `CommandProcessor` catches and records; anything else propagates. |
-| [Money](src/main/java/accountledger/domain/Money.java) · [CurrencyUnit](src/main/java/accountledger/domain/CurrencyUnit.java) | An exact decimal at its currency's scale — AED 2 places, BHD 3 — with explicit rounding and installment splitting. |
+| [Money](src/main/java/accountledger/domain/Money.java) · [CurrencyUnit](src/main/java/accountledger/domain/enums/CurrencyUnit.java) | An exact decimal at its currency's scale — AED 2 places, BHD 3 — with explicit rounding and installment splitting. |
 
 ---
 

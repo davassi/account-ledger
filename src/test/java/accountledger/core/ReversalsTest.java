@@ -15,8 +15,8 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import static accountledger.domain.Authorization.Status.DECLINED;
-import static accountledger.domain.CurrencyUnit.AED;
-import static accountledger.domain.CurrencyUnit.BHD;
+import static accountledger.domain.enums.CurrencyUnit.AED;
+import static accountledger.domain.enums.CurrencyUnit.BHD;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;

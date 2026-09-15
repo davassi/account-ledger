@@ -12,8 +12,8 @@ import java.io.PrintStream;
 import java.util.Arrays;
 import java.util.List;
 
-import static accountledger.domain.CurrencyUnit.AED;
-import static accountledger.domain.CurrencyUnit.BHD;
+import static accountledger.domain.enums.CurrencyUnit.AED;
+import static accountledger.domain.enums.CurrencyUnit.BHD;
 
 /** The required six-day scenario, in arrival order, with explicit closing operations. */
 public final class Scenario {

@@ -1,7 +1,7 @@
 package accountledger.core;
 
 import accountledger.domain.Account;
-import accountledger.domain.CurrencyUnit;
+import accountledger.domain.enums.CurrencyUnit;
 import accountledger.domain.Money;
 import accountledger.domain.Posting;
 
@@ -12,8 +12,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
-import static accountledger.domain.CurrencyUnit.AED;
-import static accountledger.domain.CurrencyUnit.BHD;
+import static accountledger.domain.enums.CurrencyUnit.AED;
+import static accountledger.domain.enums.CurrencyUnit.BHD;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 

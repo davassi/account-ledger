@@ -1,4 +1,4 @@
-package accountledger.domain;
+package accountledger.domain.enums;
 
 /**
  * Represents a currency unit with a specific scale.
