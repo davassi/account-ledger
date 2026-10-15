@@ -1,10 +1,10 @@
-# Account Ledger
+# Bank Account Ledger
 
 ![Java 21](https://img.shields.io/badge/Java-21-informational?style=flat-square)
 ![Maven 3.6+](https://img.shields.io/badge/Maven-3.6%2B-informational.png?style=flat-square)
 ![Runtime dependencies: none](https://img.shields.io/badge/runtime%20dependencies-none-informational?style=flat-square)
 
-Account Ledger is an in-memory account ledger in **Java 21**, built around an append-only journal.
+Bank Account Ledger is an in-memory account ledger in **Java 21**, built around an append-only journal.
 It processes six days of credits, debits, card authorizations, settlements and backdated corrections across AED and BHD accounts. 
 Earlier views remain queryable after later events change the balances.
 
